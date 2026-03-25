@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bogeys and Bunkers</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Monday Night Golf League</p>
+        <h1>Bogeys and Bunkers</h1>
+        <p class="hero-text">League standings, weekly matchups, score entry, and handicap tracking for a 10-team two-man season.</p>
+      </div>
+
+      <nav class="hero-nav" aria-label="Primary">
+        <a class="nav-chip" href="#home">Standings</a>
+        <a class="nav-chip" href="#handicaps">Handicaps</a>
+        <a class="nav-chip" href="#scores">Scores</a>
+        <a class="nav-chip" href="#schedule">Schedule</a>
+        <a class="nav-chip" href="#matchups">Matchups</a>
+      </nav>
+    </header>
+
+    <main class="layout">
+      <section class="page-section is-active" id="home" data-page="home">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Front Page</p>
+            <h2>League Standings</h2>
+          </div>
+          <p class="section-meta" id="standingsMeta"></p>
+        </div>
+
+        <div class="quick-links">
+          <a class="quick-link" href="#handicaps">Handicaps</a>
+          <a class="quick-link" href="#scores">Scores</a>
+          <a class="quick-link" href="#schedule">Schedule</a>
+          <a class="quick-link" href="#matchups">Matchups</a>
+        </div>
+
+        <div class="panel">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Place</th>
+                  <th>Team</th>
+                  <th>Points</th>
+                </tr>
+              </thead>
+              <tbody id="standingsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-section" id="handicaps" data-page="handicaps">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Player View</p>
+            <h2>Handicaps</h2>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Player</th>
+                  <th>Team</th>
+                  <th>Scores</th>
+                  <th>Handicap</th>
+                </tr>
+              </thead>
+              <tbody id="handicapTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-section" id="scores" data-page="scores">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Admin Scores</p>
+            <h2>Weekly Scores</h2>
+          </div>
+
+          <label class="compact-field" for="scoreWeekSelect">
+            <span>Week</span>
+            <select id="scoreWeekSelect"></select>
+          </label>
+        </div>
+
+        <div id="scoresWeekLabel" class="subhead"></div>
+        <div id="scoresContainer" class="stack-lg"></div>
+      </section>
+
+      <section class="page-section" id="schedule" data-page="schedule">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Season View</p>
+            <h2>Schedule</h2>
+          </div>
+          <p class="section-meta">Season dates run from April 27, 2026 through August 31, 2026.</p>
+        </div>
+
+        <div id="scheduleContainer" class="stack-lg"></div>
+      </section>
+
+      <section class="page-section" id="matchups" data-page="matchups">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Next On Deck</p>
+            <h2>Upcoming Matchups</h2>
+          </div>
+          <p class="section-meta" id="matchupMeta"></p>
+        </div>
+
+        <div id="nextMatchupsContainer" class="stack-lg"></div>
+      </section>
+    </main>
+
+    <footer class="admin-footer">
+      <details class="admin-drawer" id="adminDrawer">
+        <summary>league admin</summary>
+
+        <div class="admin-grid">
+          <section class="panel">
+            <div class="section-header compact-header">
+              <div>
+                <p class="section-kicker">Admin</p>
+                <h3>Teams and Players</h3>
+              </div>
+              <button class="btn btn-secondary" id="addTeamBtn" type="button">Add Team</button>
+            </div>
+            <div id="teamAdminContainer" class="stack-md"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-header compact-header">
+              <div>
+                <p class="section-kicker">Admin</p>
+                <h3>Schedule Editor</h3>
+              </div>
+              <button class="btn btn-primary" id="regenerateScheduleBtn" type="button">Regenerate Standard Schedule</button>
+            </div>
+            <p class="admin-note">The standard generator creates a double round robin for the current team list. The extra Monday on August 31 is reserved as a flexible league night and can be edited here.</p>
+            <div id="scheduleAdminContainer" class="stack-md"></div>
+          </section>
+        </div>
+      </details>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

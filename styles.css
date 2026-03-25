@@ -1,0 +1,430 @@
+:root {
+  --bg: #eef6eb;
+  --panel: rgba(255, 252, 247, 0.92);
+  --panel-strong: #fffdf8;
+  --ink: #1c2c24;
+  --muted: #5d6d63;
+  --line: rgba(28, 44, 36, 0.12);
+  --accent: #a45526;
+  --accent-dark: #7d3b15;
+  --accent-soft: #efc7a2;
+  --green: #406b48;
+  --green-soft: #dbe8d7;
+  --shadow: 0 24px 70px rgba(52, 73, 56, 0.13);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  font-family: "Barlow", sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(164, 85, 38, 0.12), transparent 24%),
+    radial-gradient(circle at bottom right, rgba(64, 107, 72, 0.14), transparent 26%),
+    linear-gradient(180deg, #f5fbf3 0%, var(--bg) 58%, #e0ebdb 100%);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.page-shell {
+  width: min(1240px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 28px 0 40px;
+}
+
+.hero {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: 1.5fr 1fr;
+  align-items: end;
+  margin-bottom: 26px;
+}
+
+.eyebrow,
+.section-kicker,
+.section-meta,
+.admin-note,
+.compact-field span {
+  margin: 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+h1,
+h2,
+h3,
+h4,
+th {
+  margin: 0;
+  font-family: "Fraunces", serif;
+}
+
+h1 {
+  font-size: clamp(3rem, 7vw, 5.5rem);
+  line-height: 0.92;
+  max-width: 8ch;
+}
+
+.hero-text {
+  max-width: 58ch;
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 1.02rem;
+  line-height: 1.55;
+}
+
+.hero-nav,
+.quick-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.nav-chip,
+.quick-link {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 251, 245, 0.8);
+  box-shadow: var(--shadow);
+}
+
+.nav-chip {
+  padding: 12px 16px;
+  font-weight: 600;
+}
+
+.quick-link {
+  padding: 14px 18px;
+  font-weight: 700;
+  color: var(--accent-dark);
+}
+
+.layout,
+.admin-grid {
+  display: grid;
+  gap: 24px;
+}
+
+.page-section,
+.panel {
+  backdrop-filter: blur(14px);
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 26px;
+  box-shadow: var(--shadow);
+}
+
+.page-section {
+  display: none;
+  padding: 24px;
+}
+
+.page-section.is-active {
+  display: block;
+}
+
+.panel {
+  padding: 20px;
+}
+
+.section-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.section-header h2 {
+  font-size: clamp(2rem, 3vw, 2.5rem);
+}
+
+.compact-header {
+  align-items: center;
+}
+
+.subhead {
+  margin-bottom: 16px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+td {
+  color: var(--muted);
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.rank-cell {
+  font-weight: 700;
+  color: var(--accent-dark);
+}
+
+.team-cell {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.points-pill {
+  display: inline-flex;
+  min-width: 60px;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-weight: 700;
+}
+
+.stack-lg,
+.stack-md {
+  display: grid;
+  gap: 18px;
+}
+
+.match-card,
+.week-card,
+.team-admin-card,
+.schedule-edit-card {
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+  padding: 18px;
+}
+
+.week-card-header,
+.match-header,
+.team-admin-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.week-label,
+.match-title {
+  font-family: "Fraunces", serif;
+  font-size: 1.35rem;
+  color: var(--ink);
+}
+
+.week-date {
+  color: var(--muted);
+}
+
+.match-grid,
+.score-grid,
+.admin-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.team-matchup,
+.player-score-card {
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  padding: 16px;
+  background: rgba(246, 251, 243, 0.78);
+}
+
+.team-name {
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 1.05rem;
+}
+
+.player-line,
+.score-summary,
+.score-note {
+  color: var(--muted);
+}
+
+.player-line strong,
+.score-summary strong {
+  color: var(--ink);
+}
+
+.score-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.player-score-card h4 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.hole-grid {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(40px, 1fr));
+  gap: 8px;
+}
+
+.hole-field {
+  display: grid;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.hole-field input,
+.compact-field input,
+.compact-field select,
+.match-row select,
+.team-admin-card input {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--ink);
+}
+
+.hole-field input {
+  padding: 9px 8px;
+  text-align: center;
+}
+
+.compact-field {
+  display: grid;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 15px;
+  cursor: pointer;
+  transition: transform 140ms ease, opacity 140ms ease, background 140ms ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff7f0;
+}
+
+.btn-secondary {
+  background: var(--green);
+  color: #f4fbf2;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.btn-danger {
+  background: #d96d52;
+  color: #fff6f0;
+}
+
+.match-row,
+.team-player-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.match-row {
+  grid-template-columns: 1fr auto 1fr auto;
+  align-items: center;
+}
+
+.team-player-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.admin-footer {
+  margin-top: 18px;
+}
+
+.admin-drawer {
+  color: var(--muted);
+}
+
+.admin-drawer summary {
+  width: fit-content;
+  margin-left: auto;
+  cursor: pointer;
+  font-size: 0.8rem;
+  text-transform: lowercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.admin-drawer[open] summary {
+  margin-bottom: 16px;
+}
+
+.empty-state {
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+@media (max-width: 980px) {
+  .hero,
+  .match-grid,
+  .score-grid,
+  .admin-grid,
+  .team-player-grid,
+  .match-row,
+  .section-header {
+    grid-template-columns: 1fr;
+  }
+
+  .hero,
+  .section-header,
+  .week-card-header,
+  .match-header,
+  .team-admin-header {
+    display: grid;
+    align-items: start;
+  }
+
+  .hole-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
