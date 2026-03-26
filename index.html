@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bogeys and Bunkers</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <!-- Firebase SDK (CDN – no bundler required) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Monday Night Golf League</p>
+        <h1>Bogeys and Bunkers</h1>
+        <p class="hero-text">League standings, weekly matchups, score entry, and handicap tracking for a 10-team two-man season.</p>
+      </div>
+
+      <div class="hero-right">
+        <div class="hero-illustration" aria-hidden="true">
+          <svg viewBox="0 0 360 210" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="gSky" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#c8e6d0"/>
+                <stop offset="55%" stop-color="#ddf0e4"/>
+                <stop offset="100%" stop-color="#eef6eb"/>
+              </linearGradient>
+              <radialGradient id="gSun" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#fffde0" stop-opacity="0.9"/>
+                <stop offset="100%" stop-color="#f5e87a" stop-opacity="0"/>
+              </radialGradient>
+              <clipPath id="frame">
+                <rect width="360" height="210" rx="20"/>
+              </clipPath>
+            </defs>
+            <g clip-path="url(#frame)">
+              <rect width="360" height="210" fill="url(#gSky)"/>
+              <circle cx="308" cy="42" r="52" fill="url(#gSun)"/>
+              <circle cx="308" cy="42" r="17" fill="#fffde8" opacity="0.65"/>
+              <!-- Clouds -->
+              <g fill="rgba(255,255,255,0.82)">
+                <ellipse cx="88" cy="54" rx="32" ry="13"/>
+                <ellipse cx="107" cy="47" rx="24" ry="11"/>
+                <ellipse cx="70" cy="52" rx="19" ry="9"/>
+              </g>
+              <g fill="rgba(255,255,255,0.6)">
+                <ellipse cx="200" cy="38" rx="21" ry="8"/>
+                <ellipse cx="216" cy="32" rx="17" ry="7"/>
+              </g>
+              <!-- Far hills -->
+              <ellipse cx="45" cy="158" rx="118" ry="55" fill="#4a7a54" opacity="0.5"/>
+              <ellipse cx="318" cy="160" rx="108" ry="50" fill="#4a7a54" opacity="0.42"/>
+              <!-- Left trees -->
+              <rect x="16" y="124" width="8" height="31" fill="#2a3e2c" rx="2"/>
+              <polygon points="20,92 39,128 1,128" fill="#355c38"/>
+              <polygon points="20,105 41,134 -1,134" fill="#3d6840"/>
+              <rect x="45" y="117" width="9" height="38" fill="#2a3e2c" rx="2"/>
+              <polygon points="49.5,83 70,122 29,122" fill="#355c38"/>
+              <polygon points="49.5,97 72,128 27,128" fill="#406b48"/>
+              <rect x="76" y="130" width="6" height="23" fill="#2a3e2c" rx="2"/>
+              <polygon points="79,108 94,134 64,134" fill="#3d6840"/>
+              <!-- Right trees -->
+              <rect x="323" y="130" width="7" height="26" fill="#2a3e2c" rx="2"/>
+              <polygon points="326.5,108 343,134 310,134" fill="#355c38"/>
+              <polygon points="326.5,119 345,140 308,140" fill="#3d6840"/>
+              <!-- Ground -->
+              <path d="M0,172 Q60,152 120,164 Q180,176 242,160 Q302,144 360,157 L360,210 L0,210Z" fill="#4a7a52"/>
+              <!-- Fairway -->
+              <path d="M85,180 Q145,163 202,172 Q262,181 312,167 L322,210 L75,210Z" fill="#5a9060"/>
+              <!-- Putting green -->
+              <ellipse cx="248" cy="171" rx="53" ry="17" fill="#72b872"/>
+              <!-- Bunker -->
+              <ellipse cx="193" cy="177" rx="24" ry="9" fill="#dfc98a" opacity="0.88"/>
+              <!-- Pin shadow -->
+              <ellipse cx="251" cy="172" rx="5" ry="2" fill="rgba(0,0,0,0.13)"/>
+              <!-- Pin -->
+              <rect x="249" y="138" width="3" height="34" fill="#5d3a1a" rx="1"/>
+              <!-- Flag -->
+              <polygon points="252,138 278,148 252,158" fill="#a45526"/>
+              <polygon points="252,138 278,148 252,148" fill="#b86030" opacity="0.35"/>
+              <!-- Ball shadow -->
+              <ellipse cx="180" cy="175" rx="5" ry="2" fill="rgba(0,0,0,0.11)"/>
+              <!-- Golf ball -->
+              <circle cx="179" cy="171" r="6" fill="white"/>
+              <circle cx="179" cy="171" r="6" fill="none" stroke="#ddd" stroke-width="0.5"/>
+              <circle cx="177" cy="169" r="1.2" fill="#eee" opacity="0.8"/>
+              <circle cx="181" cy="170" r="1" fill="#eee" opacity="0.8"/>
+              <circle cx="178" cy="173" r="1" fill="#eee" opacity="0.8"/>
+            </g>
+            <rect width="360" height="210" rx="20" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1.5"/>
+          </svg>
+        </div>
+
+        <nav class="hero-nav" aria-label="Primary">
+          <a class="nav-chip" href="#home">Standings</a>
+          <a class="nav-chip" href="#handicaps">Handicaps</a>
+          <a class="nav-chip" href="#scores">Scores</a>
+          <a class="nav-chip" href="#schedule">Schedule</a>
+          <a class="nav-chip" href="#matchups">Matchups</a>
+          <a class="nav-chip" href="#stats">Stats</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="page-section is-active" id="home" data-page="home">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Front Page</p>
+            <h2>League Standings</h2>
+          </div>
+          <p class="section-meta" id="standingsMeta"></p>
+        </div>
+
+        <div class="quick-links">
+          <a class="quick-link" href="#handicaps">Handicaps</a>
+          <a class="quick-link" href="#scores">Scores</a>
+          <a class="quick-link" href="#schedule">Schedule</a>
+          <a class="quick-link" href="#matchups">Matchups</a>
+          <a class="quick-link" href="#stats">Stats</a>
+        </div>
+
+        <div class="panel">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Place</th>
+                  <th>Team</th>
+                  <th>Points</th>
+                </tr>
+              </thead>
+              <tbody id="standingsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-section" id="handicaps" data-page="handicaps">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Player View</p>
+            <h2>Handicaps</h2>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Player</th>
+                  <th>Team</th>
+                  <th>Scores</th>
+                  <th>Handicap</th>
+                </tr>
+              </thead>
+              <tbody id="handicapTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-section" id="scores" data-page="scores">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Scores</p>
+            <h2>Weekly Scores</h2>
+          </div>
+
+          <label class="compact-field" for="scoreWeekSelect">
+            <span>Week</span>
+            <select id="scoreWeekSelect"></select>
+          </label>
+        </div>
+
+        <div id="scoresWeekLabel" class="subhead"></div>
+        <div id="scoresContainer" class="stack-lg"></div>
+      </section>
+
+      <section class="page-section" id="schedule" data-page="schedule">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Season View</p>
+            <h2>Schedule</h2>
+          </div>
+          <p class="section-meta">Season dates run from April 27, 2026 through August 31, 2026.</p>
+        </div>
+
+        <div id="scheduleContainer" class="stack-lg"></div>
+      </section>
+
+      <section class="page-section" id="matchups" data-page="matchups">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Next On Deck</p>
+            <h2>Upcoming Matchups</h2>
+          </div>
+          <p class="section-meta" id="matchupMeta"></p>
+        </div>
+
+        <div id="nextMatchupsContainer" class="stack-lg"></div>
+      </section>
+
+      <section class="page-section" id="stats" data-page="stats">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Season Overview</p>
+            <h2>Stats</h2>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="table-wrap">
+            <table id="statsTable">
+              <thead>
+                <tr>
+                  <th data-col="name">Player</th>
+                  <th data-col="team">Team</th>
+                  <th data-col="rounds">Rounds</th>
+                  <th data-col="avg">Avg Score</th>
+                  <th data-col="pars">Pars</th>
+                  <th data-col="birdies">Birdies</th>
+                  <th data-col="eagles">Eagles</th>
+                  <th data-col="bogeys">Bogeys</th>
+                  <th data-col="doubles">Doubles</th>
+                  <th data-col="other">Other</th>
+                  <th data-col="best">Best Round</th>
+                  <th data-col="points">Points</th>
+                </tr>
+              </thead>
+              <tbody id="statsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="admin-footer">
+      <div class="admin-auth-bar">
+        <button class="btn btn-ghost" id="loginBtn" type="button">Admin Login</button>
+        <button class="btn btn-ghost" id="logoutBtn" type="button" hidden>Sign Out</button>
+      </div>
+
+      <details class="admin-drawer" id="adminDrawer" hidden>
+        <summary>league admin</summary>
+
+        <div class="stack-lg">
+          <div class="admin-grid">
+            <section class="panel">
+              <div class="section-header compact-header">
+                <div>
+                  <p class="section-kicker">Admin</p>
+                  <h3>Teams and Players</h3>
+                </div>
+                <button class="btn btn-secondary" id="addTeamBtn" type="button">Add Team</button>
+              </div>
+              <div id="teamAdminContainer" class="stack-md"></div>
+            </section>
+
+            <section class="panel">
+              <div class="section-header compact-header">
+                <div>
+                  <p class="section-kicker">Admin</p>
+                  <h3>Schedule Editor</h3>
+                </div>
+                <button class="btn btn-primary" id="regenerateScheduleBtn" type="button">Regenerate Standard Schedule</button>
+              </div>
+              <p class="admin-note">The standard generator creates a double round robin for the current team list. The extra Monday on August 31 is reserved as a flexible league night and can be edited here.</p>
+              <div id="scheduleAdminContainer" class="stack-md"></div>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="section-header compact-header">
+              <div>
+                <p class="section-kicker">Admin</p>
+                <h3>Substitute Players</h3>
+              </div>
+              <button class="btn btn-secondary" id="addSubBtn" type="button">Add Sub</button>
+            </div>
+            <p class="admin-note">Registered subs can be assigned to any player slot on the scores page. Their handicap updates as they play.</p>
+            <div id="subAdminContainer" class="stack-md"></div>
+          </section>
+        </div>
+      </details>
+    </footer>
+  </div>
+
+  <!-- Login Modal -->
+  <div id="loginModal" class="modal-overlay" hidden>
+    <div class="modal-card">
+      <h2>Admin Login</h2>
+      <label class="compact-field">
+        <span>Email</span>
+        <input id="loginEmail" type="email" placeholder="admin@example.com" autocomplete="email">
+      </label>
+      <label class="compact-field">
+        <span>Password</span>
+        <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password">
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="loginSubmitBtn" type="button">Sign In</button>
+        <button class="btn btn-ghost" id="loginCancelBtn" type="button">Cancel</button>
+      </div>
+      <p id="loginError" class="login-error" hidden></p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "firestore.rules",
+      "firestore.indexes.json",
+      "**/node_modules/**"
+    ],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      }
+    ]
+  },
+  "firestore": {
+    "database": "(default)",
+    "location": "northamerica-northeast1",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}
