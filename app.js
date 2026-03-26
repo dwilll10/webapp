@@ -777,7 +777,7 @@ function renderPlayerScoreCard(weekId, matchId, teamName, player, nines, points,
           const holeClass = pt === 1 ? " hole-win" : pt === 0.5 ? " hole-tie" : "";
           return `
             <label class="hole-field${holeClass}">
-              <span class="hole-label-row">${index + 1}${hasStroke ? `<span class="stroke-dot">+1</span>` : ""}</span>
+              <span class="hole-label-row">${index + 1}${hasStroke ? `<span class="stroke-dot">1</span>` : ""}</span>
               <span class="hole-par">P${pars[index]} · h${holeHandicaps[index]}</span>
               <input type="number" min="1" max="15" value="${scoreEntry.holes[index] ?? ""}"
                 data-week-id="${weekId}" data-match-id="${matchId}"

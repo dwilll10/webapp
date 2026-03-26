@@ -109,7 +109,7 @@ Each player card shows:
 - Admin-only **Player** dropdown — select "Regular" or any registered substitute
 - **Sub badge** on the h4 when a sub is active ("SUB for [original name]")
 - 9 hole inputs + read-only **Total** field (total updates live on `input`; saves on `change`)
-- Hole highlights: green = won hole, amber = tied hole; stroke-dot (+1) on stroke holes
+- Hole highlights: green = won hole, amber = tied hole; stroke-dot (1) on stroke holes
 - `Hcp:` and stroke count in the score-summary row
 
 Match summary at the bottom of each match card shows individual points + team net points per team. Team net score (sum of actual scores minus handicaps) is displayed inline as `(net N)` so players can see the values being compared.
