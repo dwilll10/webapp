@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A vanilla HTML/CSS/JS single-page application for managing a Monday Night Golf League. No build step, no framework — Firebase is loaded via CDN script tags.
 
 **Live site:** https://golfleagueapp-74095.web.app
+**Git repo:** https://github.com/dwilll10/webapp
 
 ## Deploying
 
@@ -20,7 +21,7 @@ No build step. Firebase CLI was installed to `~/.npm-global/bin/firebase` (no np
 
 Five files in the repo root:
 
-- **`index.html`** — App shell; hash-based routing (`#home`, `#handicaps`, `#scores`, `#schedule`, `#matchups`); login modal HTML; Firebase SDK script tags
+- **`index.html`** — App shell; hash-based routing (`#home`, `#handicaps`, `#scores`, `#schedule`, `#matchups`, `#stats`); login modal HTML; Firebase SDK script tags
 - **`app.js`** — All application logic: Firebase init, state sync, auth, routing, rendering, scheduling, handicap calculation
 - **`styles.css`** — Design system via CSS custom properties; responsive at 980px breakpoint
 - **`firestore.rules`** — Public read, authenticated write
@@ -60,11 +61,11 @@ Five files in the repo root:
 
 **Scheduling:** `buildDoubleRoundRobin()` generates an 18-round double round-robin. Season dates are hardcoded in `seasonDates()` (19 Mondays, Apr 27 – Aug 31, 2026). Changing the season requires editing that function. Date cascade: changing a week's date in admin shifts all subsequent weeks by the same delta.
 
-**Handicap (regular players):** `calculateHandicap(playerId)` — last 3 rounds, average strokes over par, rounded to nearest integer. Falls back to `player.startingHandicap`, then null. Par is per-nine (front: 36, back: 35).
+**Handicap (regular players):** `calculateHandicap(playerId, beforeWeekId)` — treats `startingHandicap` as two phantom prior rounds (prepends `[sh, sh]` before actual over-par values), then slices to the last 3, averages, and rounds. This means the starting handicap decays naturally as real rounds accumulate and drops out after 3 rounds. Accepts optional `beforeWeekId` to exclude a specific week's scores (used on the Scores page to freeze handicaps at pre-week values). Par is per-nine (front: 36, back: 35).
 
 **Handicap (substitutes):** `calculateSubHandicap(subId)` — same logic as regular players but sources rounds from `getSubRounds(subId)`, which scans `subAssignments` to find matches where the sub played and pulls scores from the regular player's score slot. Falls back to `sub.startingHandicap`.
 
-**Effective handicap:** `getEffectiveHandicap(weekId, matchId, playerId)` — returns the sub's handicap if one is assigned for that slot, otherwise returns the regular player's handicap. Used everywhere points and strokes are calculated.
+**Effective handicap:** `getEffectiveHandicap(weekId, matchId, playerId)` — returns the sub's handicap (via `calculateSubHandicap(subId, weekId)`) if one is assigned for that slot, otherwise returns the regular player's handicap (via `calculateHandicap(playerId, weekId)`). Both calls pass `weekId` as `beforeWeekId` to freeze handicaps at pre-week values. Used everywhere points and strokes are calculated.
 
 ## Points System
 
@@ -82,6 +83,15 @@ BACK_NINE_PARS               = [5,4,3,5,3,4,3,4,4]   // total 35
 FRONT_NINE_HOLE_HANDICAPS    = [13,3,9,15,17,4,12,11,1]
 BACK_NINE_HOLE_HANDICAPS     = [6,7,10,2,16,8,5,18,14]
 ```
+
+## Stats Page
+
+`renderStats()` builds a table with one row per player (all regular players + all subs). Columns: Rounds, Avg Score, Pars, Birdies, Eagles, Bogeys, Doubles, Other, Best Round, Points.
+
+- **Points** = sum of individual hole points earned across all rounds, computed by calling `calculateMatchPoints` with pre-week effective handicaps.
+- `collectPlayerStats(playerId)` skips matches where a sub was assigned to that slot (those points belong to the sub).
+- `collectSubStats(subId)` finds matches via `subAssignments` and reads scores from the regular player's score slot.
+- **Sortable columns:** `statsSort = { col, dir }` module-level var tracks sort state. `bindStatsSort()` delegates clicks on `#statsTable thead`. Each `<th>` has a `data-col` attribute; the active column gets class `sort-active` and a `data-dir` attribute for the CSS ▲/▼ indicator.
 
 ## Scores Page
 
