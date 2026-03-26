@@ -31,37 +31,41 @@ Five files in the repo root:
 
 - **Project:** `golfleagueapp-74095`
 - **Auth:** Email/Password. One admin account exists. Admin credentials are managed in Firebase Console → Authentication → Users.
-- **Firestore:** Single document at `league/state` holds the entire app state as one JSON object.
+- **Firestore:** Per-year docs at `league/{year}` (e.g. `league/2026`). Global docs: `league/subs` (substitute player roster). Legacy `league/state` doc auto-migrates to `league/2026` on first admin load.
 - **Security:** `allow read: if true` / `allow write: if request.auth != null`
 
 ## State Model
 
-`normalizeState()` is the source of truth for the data schema and runs on every Firestore snapshot. State is one Firestore document (`league/state`):
+`normalizeState()` is the source of truth for the data schema and runs on every Firestore snapshot. Each year's state is one Firestore document (`league/{year}`):
 
 ```js
 {
   teams: [{ id, name, points, players: [{ id, name, startingHandicap }] }],
   schedule: [{ id, label, date, nines, matches: [{ id, teamAId, teamBId }] }],
   scores: { [weekId]: { [matchId]: { [playerId]: { holes: [×9] } } } },
-  subPlayers: [{ id, name, startingHandicap }],
   subAssignments: { [weekId]: { [matchId]: { [playerId]: subPlayerId } } },
-  selectedWeekId: string
+  selectedWeekId: string,
+  courseData: { name: string, pars: [×18], handicaps: [×18] }
 }
 ```
 
+Global substitute roster is stored separately at `league/subs` as `{ subPlayers: [...] }` and held in the module-level `subPlayers` array (not in `state`). `saveSubState()` writes to `league/subs`.
+
 ## Key Patterns
 
-**State sync:** `subscribeToState()` opens a Firestore `onSnapshot` listener on app init. All writes go through `saveState()` → `DOC_REF.set(state)`. No other persistence mechanism.
+**Multi-year:** `selectedYear` (module-level var, defaults to current calendar year) controls which `league/{year}` doc is active. `getDocRef(year)` returns the Firestore ref. `loadAvailableYears()` queries the collection on init. `renderYearSelector()` populates the year `<select>` — non-admins see current year and past; admins also see `currentYear + 1`. Year changes call `subscribeToState()` which manages the `onSnapshot` listener lifecycle via `stateUnsubscribe`.
 
-**Render-before-save rule:** When a user action updates state and requires an immediate UI update, call the render functions BEFORE `saveState()`. Firestore's `onSnapshot` can fire synchronously during `saveState()` and replace `state`, so rendering first guarantees the correct in-memory state is used. Score hole entry is an exception (saves first, then re-renders — acceptable since the input value is already reflected in the DOM).
+**State sync:** `subscribeToState()` opens a Firestore `onSnapshot` listener on app init. All writes go through `saveState()` → `getDocRef(selectedYear).set(state)`. No other persistence mechanism.
+
+**Render-before-save rule:** When a user action updates state and requires an immediate UI update, call the render functions BEFORE `saveState()`. Firestore's `onSnapshot` can fire synchronously during `saveState()` and replace `state`, so rendering first guarantees the correct in-memory state is used. Score hole entry is an exception (saves first, then re-renders — acceptable since the input value is already reflected in the DOM). The scores page week selector does NOT call `saveState()` at all — selected week is pure UI state to prevent the onSnapshot revert.
 
 **Auth gating:** `auth.onAuthStateChanged` shows/hides the admin drawer. Score entry inputs and sub-player dropdowns are rendered with `disabled`/omitted when `auth.currentUser` is null; `bindScoreInputs()` early-returns for non-admins.
 
 **Routing:** Hash changes call `renderPageFromHash()` which toggles `is-active` on `<section data-page="...">` elements.
 
-**Scheduling:** `buildDoubleRoundRobin()` generates an 18-round double round-robin. Season dates are hardcoded in `seasonDates()` (19 Mondays, Apr 27 – Aug 31, 2026). Changing the season requires editing that function. Date cascade: changing a week's date in admin shifts all subsequent weeks by the same delta. New/regenerated schedules default to alternating Front 9 / Back 9 starting with Front 9 (odd-indexed weeks = front, even-indexed = back).
+**Scheduling:** `buildDoubleRoundRobin()` generates an 18-round double round-robin. `lastMondayOfApril(year)` computes the default Week 1 date (replaces old hardcoded `seasonDates()`). Admin schedule editor has "Number of Weeks" and "Week 1 Date" inputs; `generateScheduleBtn` regenerates from those. Date cascade: changing a week's date in admin shifts all subsequent weeks by the same delta. New/regenerated schedules default to alternating Front 9 / Back 9 starting with Front 9 (odd-indexed weeks = front, even-indexed = back).
 
-**Handicap (regular players):** `calculateHandicap(playerId, beforeWeekId)` — treats `startingHandicap` as two phantom prior rounds (prepends `[sh, sh]` before actual over-par values), then slices to the last 3, averages, and rounds. This means the starting handicap decays naturally as real rounds accumulate and drops out after 3 rounds. Accepts optional `beforeWeekId` to exclude a specific week's scores (used on the Scores page to freeze handicaps at pre-week values). Par is per-nine (front: 36, back: 35).
+**Handicap (regular players):** `calculateHandicap(playerId, beforeWeekId)` — treats `startingHandicap` as two phantom prior rounds (prepends `[sh, sh]` before actual over-par values), then slices to the last 3, averages, and rounds. This means the starting handicap decays naturally as real rounds accumulate and drops out after 3 rounds. Accepts optional `beforeWeekId` to exclude a specific week's scores (used on the Scores page to freeze handicaps at pre-week values). Par is per-nine from `getNinePars(nines)`.
 
 **Handicap (substitutes):** `calculateSubHandicap(subId)` — same logic as regular players but sources rounds from `getSubRounds(subId)`, which scans `subAssignments` to find matches where the sub played and pulls scores from the regular player's score slot. Falls back to `sub.startingHandicap`.
 
@@ -77,14 +81,18 @@ Five files in the repo root:
 - **Total per team:** sum of individual hole points (both players) + team net points, across all weeks.
 - **Standings** use `computeTeamPoints(teamId)` — live-calculated, ignores the `team.points` field.
 
-## Course Data (constants at top of app.js)
+## Course Data
+
+Stored per-year in `state.courseData`. `normalizeCourseData(raw)` normalizes it with Pine Grove defaults:
 
 ```js
-FRONT_NINE_PARS              = [5,5,3,4,3,4,3,4,5]   // total 36
-BACK_NINE_PARS               = [5,4,3,5,3,4,3,4,4]   // total 35
-FRONT_NINE_HOLE_HANDICAPS    = [13,3,9,15,17,4,12,11,1]
-BACK_NINE_HOLE_HANDICAPS     = [6,7,10,2,16,8,5,18,14]
+DEFAULT_FRONT_PARS      = [5,5,3,4,3,4,3,4,5]   // total 36
+DEFAULT_BACK_PARS       = [5,4,3,5,3,4,3,4,4]   // total 35
+DEFAULT_FRONT_HANDICAPS = [13,3,9,15,17,4,12,11,1]
+DEFAULT_BACK_HANDICAPS  = [6,7,10,2,16,8,5,18,14]
 ```
+
+`getNinePars(nines)` and `getNineHandicaps(nines)` read from `state.courseData` (not the constants directly). `calculateHandicapFromData()` and `calculateSubHandicapFromData()` use `normalizeCourseData(data.courseData)` so prior-year handicap calculations use that year's course, not the current year's. Course settings are edited in the admin Course Settings panel and saved via `saveState()`.
 
 ## Stats Page
 
@@ -106,13 +114,15 @@ Each player card shows:
 
 Match summary at the bottom of each match card shows individual points + team net points per team. Team net score (sum of actual scores minus handicaps) is displayed inline as `(net N)` so players can see the values being compared.
 
+The **week selector** (`#scoreWeekSelect`) uses the `.year-select` pill style with a green tint. It does NOT call `saveState()` on change — the selected week is pure local UI state. This prevents `onSnapshot` from reverting the selection.
+
 ## Handicaps Page
 
 The **Latest Scores** column shows the last 3 rounds used for handicap calculation (`.slice(-3)` on `getPlayerRounds` / `getSubRounds`). This matches exactly the scores feeding into `calculateHandicap`.
 
 ## Substitute Players
 
-- **Roster:** `state.subPlayers` — a global list managed in the "Substitute Players" admin panel.
+- **Roster:** `subPlayers` module-level array, sourced from `league/subs` Firestore doc. Global across all years — the list accrues over time and is not tied to any season.
 - **Assignment:** `state.subAssignments[weekId][matchId][playerId]` = subPlayerId. The sub fills in for the regular player in that specific match slot.
 - **Scores:** Stored under the regular player's ID in `state.scores` regardless of whether a sub is playing.
 - **Handicap page:** Sub players appear at the bottom of the table with team shown as *Substitute*. Their handicap is calculated from actual rounds played (via `getSubRounds`) or falls back to `startingHandicap`.
@@ -120,16 +130,44 @@ The **Latest Scores** column shows the last 3 rounds used for handicap calculati
 
 ## Admin Panels
 
-All inside `#adminDrawer` (hidden until logged in). Three panels:
+All inside `#adminDrawer` (hidden until logged in). Four panels:
 
 1. **Teams and Players** — dropdown to select a team; edit name, points, player names, and starting handicaps per player.
-2. **Schedule Editor** — dropdown to select a week; edit date (cascades to subsequent weeks), front/back nine, and match pairings. New schedules default to alternating Front 9 / Back 9.
-3. **Substitute Players** — list of registered subs; add/remove subs and set their name and starting handicap.
+2. **Schedule Editor** — number of weeks + Week 1 date inputs, generate button; dropdown to select a week; edit date (cascades to subsequent weeks), front/back nine, and match pairings.
+3. **Substitute Players** — global list of registered subs (persists across all years); add/remove subs and set their name and starting handicap.
+4. **Course Settings** — per-year; course name + par and hole handicap for all 18 holes. Defaults to Pine Grove values. Saved to `state.courseData` via `saveState()`.
+
+When a year has no data yet, an **Initialize Season** panel appears instead of the normal admin UI, with options to copy teams from the prior year (including latest handicaps as starting handicaps) or start from scratch.
 
 Module-level vars `adminSelectedTeamId` and `adminSelectedWeekId` survive `renderAll()` calls to preserve dropdown selections.
+
+## Header
+
+`renderAll()` updates `#heroEyebrow` to `"Monday Night Golf League — {state.courseData.name}"` so the current year's course name always appears in the banner.
+
+## Page Notes
+
+`.page-note` CSS class adds bold text with `margin: 20px 0 28px` for informational notes on public pages. Currently used on:
+- **Schedule** — tee times start at 5 PM, first come first served
+- **Matchups** — same tee time note
+- **Handicaps** — handicaps use three most recent rounds
+
+## iOS / Mobile
+
+Three options if the app ever needs to ship as a mobile app:
+
+| Option | Effort | Notes |
+|--------|--------|-------|
+| **PWA** | 1–2 hrs | `manifest.json` + service worker + meta tags. "Add to Home Screen" from Safari. No App Store. **Recommended for this app.** |
+| **Capacitor wrapper** | 1–2 days | Wraps existing HTML/CSS/JS in a native iOS shell. Real `.ipa`, App Store eligible. Needs Mac + Xcode + Apple Developer account ($99/yr). |
+| **Native Swift rewrite** | Weeks | Not worth it for a 10-team league app. |
+
+PWA files that would need to be added/changed: `manifest.json` (new), `sw.js` (new service worker), `index.html` (manifest link + Apple meta tags), `firebase.json` (service worker headers).
+
+---
 
 ## Key Constraints
 
 - **`app.js` is one file** — keep additions in the same file
 - **No tests** — verify scoring/handicap logic manually against known inputs
-- **Firestore first-load seeding** — if `league/state` doesn't exist, the app seeds defaults only when an admin is logged in
+- **Firestore first-load seeding** — if `league/{year}` doesn't exist, the app seeds defaults only when an admin is logged in

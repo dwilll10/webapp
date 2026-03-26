@@ -16,22 +16,46 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
-const DOC_REF = db.collection("league").doc("state");
+
+function getDocRef(year) {
+  return db.collection("league").doc(String(year));
+}
 
 // ---------------------------------------------------------------------------
 
-const FRONT_NINE_PARS = [5, 5, 3, 4, 3, 4, 3, 4, 5]; // total: 36
-const BACK_NINE_PARS  = [5, 4, 3, 5, 3, 4, 3, 4, 4]; // total: 35
+// Default course data — Pine Grove
+const DEFAULT_FRONT_PARS      = [5, 5, 3, 4, 3, 4, 3, 4, 5];
+const DEFAULT_BACK_PARS       = [5, 4, 3, 5, 3, 4, 3, 4, 4];
+const DEFAULT_FRONT_HANDICAPS = [13, 3, 9, 15, 17, 4, 12, 11, 1];
+const DEFAULT_BACK_HANDICAPS  = [6, 7, 10, 2, 16, 8, 5, 18, 14];
 
-// Stroke index (1 = hardest, 18 = easiest) for holes 1–18
-const FRONT_NINE_HOLE_HANDICAPS = [13, 3, 9, 15, 17, 4, 12, 11, 1];
-const BACK_NINE_HOLE_HANDICAPS  = [6, 7, 10, 2, 16, 8, 5, 18, 14];
+function normalizeCourseData(raw) {
+  return {
+    name: raw?.name || "Pine Grove",
+    pars: Array.isArray(raw?.pars) && raw.pars.length === 18 ? raw.pars : [...DEFAULT_FRONT_PARS, ...DEFAULT_BACK_PARS],
+    handicaps: Array.isArray(raw?.handicaps) && raw.handicaps.length === 18 ? raw.handicaps : [...DEFAULT_FRONT_HANDICAPS, ...DEFAULT_BACK_HANDICAPS],
+  };
+}
+
+function getNinePars(nines) {
+  return nines === "back" ? state.courseData.pars.slice(9) : state.courseData.pars.slice(0, 9);
+}
+
+function getNineHandicaps(nines) {
+  return nines === "back" ? state.courseData.handicaps.slice(9) : state.courseData.handicaps.slice(0, 9);
+}
 
 let state = {};
+let subPlayers = [];
+let selectedYear = new Date().getFullYear();
+let availableYears = [];
+let stateUnsubscribe = null;
 let adminSelectedWeekId = null;
 let adminSelectedTeamId = null;
 let statsSort = { col: null, dir: 1 }; // dir: 1 = asc, -1 = desc
 
+const yearSelect = document.querySelector("#yearSelect");
+const heroEyebrow = document.querySelector("#heroEyebrow");
 const standingsMeta = document.querySelector("#standingsMeta");
 const standingsTableBody = document.querySelector("#standingsTableBody");
 const handicapTableBody = document.querySelector("#handicapTableBody");
@@ -44,8 +68,11 @@ const matchupMeta = document.querySelector("#matchupMeta");
 const teamAdminContainer = document.querySelector("#teamAdminContainer");
 const scheduleAdminContainer = document.querySelector("#scheduleAdminContainer");
 const addTeamBtn = document.querySelector("#addTeamBtn");
-const regenerateScheduleBtn = document.querySelector("#regenerateScheduleBtn");
+const generateScheduleBtn = document.querySelector("#generateScheduleBtn");
+const scheduleStartDateInput = document.querySelector("#scheduleStartDate");
+const scheduleNumWeeksInput = document.querySelector("#scheduleNumWeeks");
 const subAdminContainer = document.querySelector("#subAdminContainer");
+const courseAdminContainer = document.querySelector("#courseAdminContainer");
 const addSubBtn = document.querySelector("#addSubBtn");
 const statsTableBody = document.querySelector("#statsTableBody");
 const adminDrawer = document.querySelector("#adminDrawer");
@@ -62,7 +89,8 @@ document.addEventListener("DOMContentLoaded", () => {
   bindAuthActions();
   bindStatsSort();
   subscribeToAuthState();
-  subscribeToState();
+  subscribeToSubs();
+  loadAvailableYears();
 });
 
 // ---------------------------------------------------------------------------
@@ -70,15 +98,24 @@ document.addEventListener("DOMContentLoaded", () => {
 // ---------------------------------------------------------------------------
 
 function subscribeToState() {
-  DOC_REF.onSnapshot((snap) => {
+  if (stateUnsubscribe) stateUnsubscribe();
+  stateUnsubscribe = getDocRef(selectedYear).onSnapshot(async (snap) => {
     if (snap.exists) {
       state = normalizeState(snap.data());
-    } else {
-      // First-ever load: seed Firestore with defaults (only succeeds when logged in)
-      state = normalizeState({});
-      if (auth.currentUser) {
-        DOC_REF.set(state).catch((err) => console.error("Seed failed:", err));
+    } else if (selectedYear === 2026) {
+      // One-time migration from legacy 'league/state' doc
+      const legacy = await db.collection("league").doc("state").get();
+      if (legacy.exists) {
+        state = normalizeState(legacy.data());
+        if (auth.currentUser) getDocRef(2026).set(state).catch(console.error);
+        renderWeekOptions();
+        renderAll();
+        return;
+      } else {
+        state = emptyYearState();
       }
+    } else {
+      state = emptyYearState();
     }
     renderWeekOptions();
     renderAll();
@@ -87,8 +124,34 @@ function subscribeToState() {
   });
 }
 
+function emptyYearState() {
+  return { teams: [], schedule: [], scores: {}, subAssignments: {}, selectedWeekId: "", courseData: normalizeCourseData({}) };
+}
+
+
+function subscribeToSubs() {
+  db.collection("league").doc("subs").onSnapshot(async (snap) => {
+    if (snap.exists) {
+      subPlayers = snap.data().subPlayers || [];
+    } else {
+      // One-time migration: pull subs from legacy 'league/state' doc
+      const legacy = await db.collection("league").doc("state").get();
+      const legacySubs = legacy.exists ? (legacy.data().subPlayers || []) : [];
+      subPlayers = legacySubs;
+      if (auth.currentUser && legacySubs.length) {
+        db.collection("league").doc("subs").set({ subPlayers }).catch(console.error);
+      }
+    }
+    renderAll();
+  });
+}
+
+function saveSubState() {
+  db.collection("league").doc("subs").set({ subPlayers }).catch((err) => console.error("Sub save failed:", err));
+}
+
 function saveState() {
-  DOC_REF.set(state).catch((err) => console.error("Save failed:", err));
+  getDocRef(selectedYear).set(state).catch((err) => console.error("Save failed:", err));
 }
 
 // ---------------------------------------------------------------------------
@@ -106,8 +169,8 @@ function subscribeToAuthState() {
       logoutBtn.setAttribute("hidden", "");
       loginBtn.removeAttribute("hidden");
     }
-    // Re-render scores so inputs enable/disable correctly
-    renderScores();
+    renderYearSelector();
+    renderAll();
   });
 }
 
@@ -178,7 +241,7 @@ function normalizeState(rawState) {
   const teams = Array.isArray(rawState.teams) ? rawState.teams : createDefaultTeams();
   const schedule = Array.isArray(rawState.schedule) && rawState.schedule.length
     ? rawState.schedule
-    : createStandardSchedule(teams, seasonDates());
+    : createStandardSchedule(teams, generateScheduleDates(lastMondayOfApril(selectedYear), 19));
 
   const selectedWeekId = rawState.selectedWeekId && schedule.some((week) => week.id === rawState.selectedWeekId)
     ? rawState.selectedWeekId
@@ -203,7 +266,7 @@ function normalizeState(rawState) {
     schedule: schedule.map((week, weekIndex) => ({
       id: week.id || `week-${weekIndex + 1}`,
       label: week.label || `Week ${weekIndex + 1}`,
-      date: week.date || seasonDates()[weekIndex] || "",
+      date: week.date || "",
       nines: week.nines === "back" || week.nines === "front" ? week.nines : (weekIndex % 2 === 0 ? "front" : "back"),
       matches: Array.isArray(week.matches)
         ? week.matches.map((match, matchIndex) => ({
@@ -214,15 +277,9 @@ function normalizeState(rawState) {
         : [],
     })),
     scores: rawState.scores || {},
-    subPlayers: Array.isArray(rawState.subPlayers)
-      ? rawState.subPlayers.map((s) => ({
-        id: s.id || crypto.randomUUID(),
-        name: s.name || "Sub Player",
-        startingHandicap: Number.isFinite(s.startingHandicap) ? s.startingHandicap : null,
-      }))
-      : [],
     subAssignments: rawState.subAssignments || {},
     selectedWeekId,
+    courseData: normalizeCourseData(rawState.courseData),
   };
 }
 
@@ -252,7 +309,6 @@ function renderPageFromHash() {
 function bindGlobalActions() {
   scoreWeekSelect.addEventListener("change", (event) => {
     state.selectedWeekId = event.target.value;
-    saveState();
     renderScores();
   });
 
@@ -266,19 +322,24 @@ function bindGlobalActions() {
   });
 
   addSubBtn.addEventListener("click", () => {
-    state.subPlayers = [...(state.subPlayers || []), {
+    subPlayers = [...subPlayers, {
       id: crypto.randomUUID(),
       name: "New Sub",
       startingHandicap: null,
     }];
-    saveState();
+    saveSubState();
     renderSubAdmin();
     renderScores();
   });
 
-  regenerateScheduleBtn.addEventListener("click", () => {
-    state.schedule = createStandardSchedule(state.teams, seasonDates());
+  generateScheduleBtn.addEventListener("click", () => {
+    const startDate = scheduleStartDateInput.value;
+    const numWeeks = parseInt(scheduleNumWeeksInput.value, 10);
+    if (!startDate || !numWeeks || numWeeks < 1) return;
+    const dates = generateScheduleDates(startDate, numWeeks);
+    state.schedule = createStandardSchedule(state.teams, dates);
     state.selectedWeekId = state.schedule.find((week) => week.matches.length)?.id || state.schedule[0]?.id || "";
+    adminSelectedWeekId = state.schedule[0]?.id || null;
     saveState();
     renderWeekOptions();
     renderAll();
@@ -286,19 +347,146 @@ function bindGlobalActions() {
 }
 
 // ---------------------------------------------------------------------------
+// Year management
+// ---------------------------------------------------------------------------
+
+async function loadAvailableYears() {
+  const snapshot = await db.collection("league").get();
+  availableYears = snapshot.docs
+    .map((doc) => parseInt(doc.id, 10))
+    .filter((y) => Number.isFinite(y));
+
+  // Legacy 'league/state' doc counts as the current year's data
+  const currentCal = new Date().getFullYear();
+  if (!availableYears.includes(currentCal) && snapshot.docs.some((d) => d.id === "state")) {
+    availableYears = [...availableYears, currentCal];
+  }
+
+  renderYearSelector();
+  subscribeToState();
+}
+
+function renderYearSelector() {
+  const currentCal = new Date().getFullYear();
+  const isAdmin = !!auth.currentUser;
+  const maxYear = isAdmin ? currentCal + 1 : currentCal;
+
+  const years = [...new Set([
+    ...availableYears.filter((y) => y <= maxYear),
+    currentCal,
+    ...(isAdmin ? [currentCal + 1] : []),
+  ])].sort((a, b) => b - a);
+
+  // Clamp selectedYear to current year if it's not in the visible list
+  if (!years.includes(selectedYear)) {
+    selectedYear = currentCal;
+  }
+
+  yearSelect.innerHTML = years.map((y) =>
+    `<option value="${y}">${y} Season</option>`
+  ).join("");
+
+  yearSelect.value = String(selectedYear);
+}
+
+yearSelect.addEventListener("change", (event) => {
+  selectedYear = parseInt(event.target.value, 10);
+  adminSelectedWeekId = null;
+  adminSelectedTeamId = null;
+  if (scheduleStartDateInput) scheduleStartDateInput.value = "";
+  subscribeToState();
+});
+
+// ---------------------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------------------
 
 function renderAll() {
+  heroEyebrow.textContent = `Monday Night Golf League — ${state.courseData?.name || "Pine Grove"}`;
   renderStandings();
   renderHandicaps();
   renderScores();
   renderSchedule();
   renderNextMatchups();
   renderStats();
-  renderTeamAdmin();
-  renderScheduleAdmin();
-  renderSubAdmin();
+  if (auth.currentUser && state.teams.length === 0) {
+    renderInitYearPanel();
+  } else {
+    renderTeamAdmin();
+    renderScheduleAdmin();
+    renderSubAdmin();
+  }
+  renderCourseAdmin();
+}
+
+function renderInitYearPanel() {
+  const priorYear = [...availableYears].filter((y) => y < selectedYear).sort((a, b) => b - a)[0] || null;
+
+  teamAdminContainer.innerHTML = `
+    <section class="init-year-panel">
+      <h3>Initialize ${selectedYear} Season</h3>
+      <p class="admin-note">No data exists for ${selectedYear} yet. Choose how to set it up.</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+        ${priorYear ? `<button class="btn btn-primary" id="initFromPriorBtn">Copy teams from ${priorYear}</button>` : ""}
+        <button class="btn btn-secondary" id="initFreshBtn">Start from scratch</button>
+      </div>
+    </section>
+  `;
+  scheduleAdminContainer.innerHTML = "";
+  subAdminContainer.innerHTML = "";
+
+  if (priorYear) {
+    document.getElementById("initFromPriorBtn")?.addEventListener("click", async () => {
+      let priorSnap = await getDocRef(priorYear).get();
+      if (!priorSnap.exists) {
+        priorSnap = await db.collection("league").doc("state").get();
+      }
+      const priorData = priorSnap.exists ? priorSnap.data() : {};
+      const priorTeams = priorData.teams || [];
+      const newTeams = priorTeams.map((team) => ({
+        id: crypto.randomUUID(),
+        name: team.name || "New Team",
+        points: 0,
+        players: (team.players || []).slice(0, 2).map((p) => ({
+          id: crypto.randomUUID(),
+          name: p.name || "Player",
+          startingHandicap: calculateHandicapFromData(p.id, priorData),
+        })),
+      }));
+      const newSubs = (priorData.subPlayers || []).map((s) => ({
+        id: crypto.randomUUID(),
+        name: s.name || "Sub Player",
+        startingHandicap: calculateSubHandicapFromData(s.id, priorData),
+      }));
+      state.teams = newTeams;
+      state.schedule = createStandardSchedule(newTeams, generateScheduleDates(lastMondayOfApril(selectedYear), 19));
+      state.scores = {};
+      state.courseData = normalizeCourseData(priorData.courseData);
+      subPlayers = newSubs;
+      saveSubState();
+      state.subAssignments = {};
+      state.selectedWeekId = state.schedule[0]?.id || "";
+      saveState();
+      availableYears = [...new Set([...availableYears, selectedYear])];
+      renderYearSelector();
+      renderWeekOptions();
+      renderAll();
+    });
+  }
+
+  document.getElementById("initFreshBtn")?.addEventListener("click", () => {
+    const newTeams = createDefaultTeams();
+    state.teams = newTeams;
+    state.schedule = createStandardSchedule(newTeams, generateScheduleDates(lastMondayOfApril(selectedYear), 19));
+    state.scores = {};
+    state.subAssignments = {};
+    state.selectedWeekId = state.schedule[0]?.id || "";
+    saveState();
+    availableYears = [...new Set([...availableYears, selectedYear])];
+    renderYearSelector();
+    renderWeekOptions();
+    renderAll();
+  });
 }
 
 // Returns { teamA: 0|1|2, teamB: 0|1|2 } or null if scores incomplete
@@ -326,7 +514,7 @@ function calculateTeamNetPoints(week, match) {
 function computeTeamPoints(teamId) {
   let total = 0;
   for (const week of state.schedule || []) {
-    const holeHandicaps = week.nines === "back" ? BACK_NINE_HOLE_HANDICAPS : FRONT_NINE_HOLE_HANDICAPS;
+    const holeHandicaps = getNineHandicaps(week.nines);
     for (const match of week.matches) {
       const isA = match.teamAId === teamId;
       const isB = match.teamBId === teamId;
@@ -397,7 +585,7 @@ function renderHandicaps() {
     `;
   });
 
-  const subRows = (state.subPlayers || []).map((sub) => {
+  const subRows = subPlayers.map((sub) => {
     const handicap = calculateSubHandicap(sub.id);
     const rounds = getSubRounds(sub.id);
     const scoreList = rounds.slice(-3).map((r) => `${r.weekLabel}: ${r.total}`).join(" | ") || "No scores yet";
@@ -485,7 +673,7 @@ function renderScoreMatchCard(week, match) {
     return `<div class="match-card"><div class="empty-state">This matchup has missing teams. Update it in the admin schedule editor.</div></div>`;
   }
 
-  const holeHandicaps = week.nines === "back" ? BACK_NINE_HOLE_HANDICAPS : FRONT_NINE_HOLE_HANDICAPS;
+  const holeHandicaps = getNineHandicaps(week.nines);
 
   // Sort each team by handicap so lowest-hcp player is always "player A"
   const sortedA = getSortedPlayers(week.id, match.id, teamA);
@@ -548,8 +736,8 @@ function renderPlayerScoreCard(weekId, matchId, teamName, player, nines, points,
   const scoreEntry = getScoreEntry(weekId, matchId, player.id);
   const total = calculateRoundTotal(scoreEntry.holes);
   const isAdmin = !!auth.currentUser;
-  const pars = nines === "back" ? BACK_NINE_PARS : FRONT_NINE_PARS;
-  const holeHandicaps = nines === "back" ? BACK_NINE_HOLE_HANDICAPS : FRONT_NINE_HOLE_HANDICAPS;
+  const pars = getNinePars(nines);
+  const holeHandicaps = getNineHandicaps(nines);
 
   const totalPoints = points ? points.filter((p) => p !== null).reduce((s, p) => s + p, 0) : null;
   const hasPoints = points && points.some((p) => p !== null);
@@ -557,8 +745,6 @@ function renderPlayerScoreCard(weekId, matchId, teamName, player, nines, points,
   const sub = subId ? getSubPlayer(subId) : null;
   const handicap = getEffectiveHandicap(weekId, matchId, player.id);
   const displayName = sub ? sub.name : player.name;
-  const subPlayers = state.subPlayers || [];
-
   return `
     <section class="player-score-card">
       <div class="player-card-header">
@@ -648,6 +834,15 @@ function bindScoreInputs() {
 }
 
 function renderSchedule() {
+  const scheduleMeta = document.querySelector("#scheduleMeta");
+  if (scheduleMeta) {
+    const first = state.schedule[0]?.date;
+    const last = state.schedule[state.schedule.length - 1]?.date;
+    scheduleMeta.textContent = first && last && state.schedule.length
+      ? `${state.schedule.length} weeks · ${formatDate(first)} – ${formatDate(last)}`
+      : "";
+  }
+
   scheduleContainer.innerHTML = state.schedule.map((week) => `
     <article class="week-card">
       <div class="week-card-header">
@@ -830,6 +1025,11 @@ function renderTeamAdmin() {
 }
 
 function renderScheduleAdmin() {
+  // Set default Week 1 date for this year if not already set
+  if (scheduleStartDateInput && !scheduleStartDateInput.value) {
+    scheduleStartDateInput.value = lastMondayOfApril(selectedYear);
+  }
+
   // Default to first week if nothing selected or selection no longer valid
   if (!adminSelectedWeekId || !state.schedule.find((w) => w.id === adminSelectedWeekId)) {
     adminSelectedWeekId = state.schedule[0]?.id || null;
@@ -957,8 +1157,6 @@ function renderScheduleAdmin() {
 }
 
 function renderSubAdmin() {
-  const subPlayers = state.subPlayers || [];
-
   if (!subPlayers.length) {
     subAdminContainer.innerHTML = `<div class="empty-state">No substitutes registered. Click "Add Sub" to get started.</div>`;
     return;
@@ -988,7 +1186,7 @@ function renderSubAdmin() {
       const sub = getSubPlayer(event.target.dataset.subPlayerName);
       if (!sub) return;
       sub.name = event.target.value.trim() || sub.name;
-      saveState();
+      saveSubState();
       renderAll();
     });
   });
@@ -998,7 +1196,7 @@ function renderSubAdmin() {
       const sub = getSubPlayer(event.target.dataset.subPlayerHcp);
       if (!sub) return;
       sub.startingHandicap = event.target.value === "" ? null : Number(event.target.value);
-      saveState();
+      saveSubState();
       renderHandicaps();
       renderScores();
     });
@@ -1007,7 +1205,8 @@ function renderSubAdmin() {
   subAdminContainer.querySelectorAll("[data-remove-sub-id]").forEach((button) => {
     button.addEventListener("click", (event) => {
       const subId = event.target.dataset.removeSubId;
-      state.subPlayers = state.subPlayers.filter((s) => s.id !== subId);
+      subPlayers = subPlayers.filter((s) => s.id !== subId);
+      saveSubState();
       // Remove any active assignments for this sub
       Object.values(state.subAssignments || {}).forEach((weekAssign) => {
         Object.values(weekAssign).forEach((matchAssign) => {
@@ -1018,6 +1217,65 @@ function renderSubAdmin() {
       });
       saveState();
       renderAll();
+    });
+  });
+}
+
+function renderCourseAdmin() {
+  if (!courseAdminContainer) return;
+
+  const holeRow = (holeNum) => {
+    const i = holeNum - 1;
+    return `
+      <div class="course-hole-row">
+        <span class="course-hole-num">${holeNum}</span>
+        <input type="number" min="3" max="6" value="${state.courseData.pars[i]}" data-course-par="${i}" aria-label="Hole ${holeNum} par">
+        <input type="number" min="1" max="18" value="${state.courseData.handicaps[i]}" data-course-si="${i}" aria-label="Hole ${holeNum} stroke index">
+      </div>
+    `;
+  };
+
+  courseAdminContainer.innerHTML = `
+    <label class="compact-field" style="max-width:320px">
+      <span>Course Name</span>
+      <input type="text" id="courseNameInput" value="${escapeHtml(state.courseData.name)}">
+    </label>
+    <div class="course-hole-grid">
+      <div class="course-nine-section">
+        <p class="section-kicker" style="margin-bottom:6px">Front Nine (Holes 1–9)</p>
+        <div class="course-hole-header">
+          <span>Hole</span><span>Par</span><span>Handicap</span>
+        </div>
+        ${Array.from({ length: 9 }, (_, i) => holeRow(i + 1)).join("")}
+      </div>
+      <div class="course-nine-section">
+        <p class="section-kicker" style="margin-bottom:6px">Back Nine (Holes 10–18)</p>
+        <div class="course-hole-header">
+          <span>Hole</span><span>Par</span><span>Handicap</span>
+        </div>
+        ${Array.from({ length: 9 }, (_, i) => holeRow(i + 10)).join("")}
+      </div>
+    </div>
+  `;
+
+  courseAdminContainer.querySelector("#courseNameInput").addEventListener("change", (e) => {
+    state.courseData.name = e.target.value.trim() || "Pine Grove";
+    saveState();
+  });
+
+  courseAdminContainer.querySelectorAll("[data-course-par]").forEach((input) => {
+    input.addEventListener("change", (e) => {
+      const i = parseInt(e.target.dataset.coursePar, 10);
+      state.courseData.pars[i] = parseInt(e.target.value, 10) || state.courseData.pars[i];
+      saveState();
+    });
+  });
+
+  courseAdminContainer.querySelectorAll("[data-course-si]").forEach((input) => {
+    input.addEventListener("change", (e) => {
+      const i = parseInt(e.target.dataset.courseSi, 10);
+      state.courseData.handicaps[i] = parseInt(e.target.value, 10) || state.courseData.handicaps[i];
+      saveState();
     });
   });
 }
@@ -1046,6 +1304,66 @@ function getPlayerRows() {
   })));
 }
 
+// Calculates a player's handicap from a raw prior-year data object (no module state used)
+function calculateHandicapFromData(playerId, data) {
+  const player = (data.teams || []).flatMap((t) => t.players).find((p) => p.id === playerId);
+  const startingHandicap = player?.startingHandicap ?? null;
+  const cd = normalizeCourseData(data.courseData);
+
+  const rounds = [];
+  (data.schedule || []).forEach((week) => {
+    const ninePars = week.nines === "back" ? cd.pars.slice(9) : cd.pars.slice(0, 9);
+    const par = ninePars.reduce((s, p) => s + p, 0);
+    (week.matches || []).forEach((match) => {
+      const holes = ((data.scores || {})[week.id]?.[match.id]?.[playerId]?.holes || [])
+        .slice(0, 9)
+        .map((v) => (Number.isFinite(v) ? v : null));
+      if (holes.length === 9 && holes.every((h) => h !== null)) {
+        rounds.push({ total: holes.reduce((s, h) => s + h, 0), par });
+      }
+    });
+  });
+
+  const overParValues = [
+    ...(startingHandicap !== null ? [startingHandicap, startingHandicap] : []),
+    ...rounds.map((r) => r.total - r.par),
+  ].slice(-3);
+
+  if (!overParValues.length) return null;
+  return Math.round(overParValues.reduce((sum, v) => sum + v, 0) / overParValues.length);
+}
+
+function calculateSubHandicapFromData(subId, data) {
+  const sub = (data.subPlayers || []).find((s) => s.id === subId);
+  const startingHandicap = sub?.startingHandicap ?? null;
+  const cd = normalizeCourseData(data.courseData);
+
+  const rounds = [];
+  (data.schedule || []).forEach((week) => {
+    const ninePars = week.nines === "back" ? cd.pars.slice(9) : cd.pars.slice(0, 9);
+    const par = ninePars.reduce((s, p) => s + p, 0);
+    (week.matches || []).forEach((match) => {
+      const assignments = (data.subAssignments || {})[week.id]?.[match.id] || {};
+      const regularPlayerId = Object.keys(assignments).find((pid) => assignments[pid] === subId);
+      if (!regularPlayerId) return;
+      const holes = ((data.scores || {})[week.id]?.[match.id]?.[regularPlayerId]?.holes || [])
+        .slice(0, 9)
+        .map((v) => (Number.isFinite(v) ? v : null));
+      if (holes.length === 9 && holes.every((h) => h !== null)) {
+        rounds.push({ total: holes.reduce((s, h) => s + h, 0), par });
+      }
+    });
+  });
+
+  const overParValues = [
+    ...(startingHandicap !== null ? [startingHandicap, startingHandicap] : []),
+    ...rounds.map((r) => r.total - r.par),
+  ].slice(-3);
+
+  if (!overParValues.length) return null;
+  return Math.round(overParValues.reduce((sum, v) => sum + v, 0) / overParValues.length);
+}
+
 function calculateHandicap(playerId, beforeWeekId = null) {
   const player = (state.teams || []).flatMap((t) => t.players).find((p) => p.id === playerId);
   const startingHandicap = player?.startingHandicap ?? null;
@@ -1069,7 +1387,7 @@ function getPlayerRounds(playerId) {
   const rounds = [];
 
   (state.schedule || []).forEach((week) => {
-    const pars = week.nines === "back" ? BACK_NINE_PARS : FRONT_NINE_PARS;
+    const pars = getNinePars(week.nines);
     const par = pars.reduce((s, p) => s + p, 0);
 
     week.matches.forEach((match) => {
@@ -1118,7 +1436,7 @@ function getTeam(teamId) {
 }
 
 function getSubPlayer(subId) {
-  return (state.subPlayers || []).find((s) => s.id === subId) || null;
+  return subPlayers.find((s) => s.id === subId) || null;
 }
 
 function getSubAssignment(weekId, matchId, playerId) {
@@ -1139,7 +1457,7 @@ function setSubAssignment(weekId, matchId, playerId, subId) {
 function getSubRounds(subId) {
   const rounds = [];
   (state.schedule || []).forEach((week) => {
-    const pars = week.nines === "back" ? BACK_NINE_PARS : FRONT_NINE_PARS;
+    const pars = getNinePars(week.nines);
     const par = pars.reduce((s, p) => s + p, 0);
     week.matches.forEach((match) => {
       const assignments = state.subAssignments?.[week.id]?.[match.id] || {};
@@ -1196,7 +1514,7 @@ function renderStats() {
       rows.push({ name: player.name, teamName: team.name, teamLabel: escapeHtml(team.name), stats: collectPlayerStats(player.id) });
     }
   }
-  for (const sub of (state.subPlayers || [])) {
+  for (const sub of subPlayers) {
     rows.push({ name: sub.name, teamName: "Substitute", teamLabel: "<em>Substitute</em>", stats: collectSubStats(sub.id) });
   }
 
@@ -1271,8 +1589,8 @@ function collectPlayerStats(playerId) {
   const rounds = [];
   let points = 0;
   (state.schedule || []).forEach((week) => {
-    const holePars = week.nines === "back" ? BACK_NINE_PARS : FRONT_NINE_PARS;
-    const holeHandicaps = week.nines === "back" ? BACK_NINE_HOLE_HANDICAPS : FRONT_NINE_HOLE_HANDICAPS;
+    const holePars = getNinePars(week.nines);
+    const holeHandicaps = getNineHandicaps(week.nines);
     week.matches.forEach((match) => {
       if (getSubAssignment(week.id, match.id, playerId)) return;
       const entry = getScoreEntry(week.id, match.id, playerId);
@@ -1307,8 +1625,8 @@ function collectSubStats(subId) {
   const rounds = [];
   let points = 0;
   (state.schedule || []).forEach((week) => {
-    const holePars = week.nines === "back" ? BACK_NINE_PARS : FRONT_NINE_PARS;
-    const holeHandicaps = week.nines === "back" ? BACK_NINE_HOLE_HANDICAPS : FRONT_NINE_HOLE_HANDICAPS;
+    const holePars = getNinePars(week.nines);
+    const holeHandicaps = getNineHandicaps(week.nines);
     week.matches.forEach((match) => {
       const assignments = state.subAssignments?.[week.id]?.[match.id] || {};
       const regularPlayerId = Object.keys(assignments).find((pid) => assignments[pid] === subId);
@@ -1409,12 +1727,29 @@ function createStandardSchedule(teams, dates) {
     label: `Week ${index + 1}`,
     date,
     nines: index % 2 === 0 ? "front" : "back",
-    matches: (rounds[index] || []).map((pairing, pairingIndex) => ({
+    matches: (rounds[index % rounds.length] || []).map((pairing, pairingIndex) => ({
       id: `match-${index + 1}-${pairingIndex + 1}`,
       teamAId: pairing[0],
       teamBId: pairing[1],
     })),
   }));
+}
+
+function lastMondayOfApril(year) {
+  const d = new Date(year, 3, 30); // April 30
+  while (d.getDay() !== 1) d.setDate(d.getDate() - 1);
+  return d.toISOString().split("T")[0];
+}
+
+function generateScheduleDates(startDate, numWeeks) {
+  const dates = [];
+  const start = new Date(`${startDate}T00:00:00`);
+  for (let i = 0; i < numWeeks; i++) {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i * 7);
+    dates.push(d.toISOString().split("T")[0]);
+  }
+  return dates;
 }
 
 function buildDoubleRoundRobin(teamIds) {
@@ -1436,30 +1771,6 @@ function buildDoubleRoundRobin(teamIds) {
 
   const reverseRounds = rounds.map((round) => round.map(([teamAId, teamBId]) => [teamBId, teamAId]));
   return [...rounds, ...reverseRounds];
-}
-
-function seasonDates() {
-  return [
-    "2026-04-27",
-    "2026-05-04",
-    "2026-05-11",
-    "2026-05-18",
-    "2026-05-25",
-    "2026-06-01",
-    "2026-06-08",
-    "2026-06-15",
-    "2026-06-22",
-    "2026-06-29",
-    "2026-07-06",
-    "2026-07-13",
-    "2026-07-20",
-    "2026-07-27",
-    "2026-08-03",
-    "2026-08-10",
-    "2026-08-17",
-    "2026-08-24",
-    "2026-08-31",
-  ];
 }
 
 // ---------------------------------------------------------------------------

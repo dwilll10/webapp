@@ -17,7 +17,7 @@
   <div class="page-shell">
     <header class="hero">
       <div class="hero-copy">
-        <p class="eyebrow">Monday Night Golf League</p>
+        <p class="eyebrow" id="heroEyebrow">Monday Night Golf League</p>
         <h1>Bogeys and Bunkers</h1>
         <p class="hero-text">League standings, weekly matchups, score entry, and handicap tracking for a 10-team two-man season.</p>
       </div>
@@ -98,6 +98,9 @@
         </div>
 
         <nav class="hero-nav" aria-label="Primary">
+          <div class="year-bar">
+            <select id="yearSelect" class="year-select"></select>
+          </div>
           <a class="nav-chip" href="#home">Standings</a>
           <a class="nav-chip" href="#handicaps">Handicaps</a>
           <a class="nav-chip" href="#scores">Scores</a>
@@ -142,6 +145,7 @@
           </div>
         </div>
 
+        <p class="admin-note page-note">Handicaps are calculated by using the player's three most recent rounds.</p>
         <div class="panel">
           <div class="table-wrap">
             <table>
@@ -166,10 +170,7 @@
             <h2>Weekly Scores</h2>
           </div>
 
-          <label class="compact-field" for="scoreWeekSelect">
-            <span>Week</span>
-            <select id="scoreWeekSelect"></select>
-          </label>
+          <select id="scoreWeekSelect" class="year-select"></select>
         </div>
 
         <div id="scoresWeekLabel" class="subhead"></div>
@@ -182,9 +183,10 @@
             <p class="section-kicker">Season View</p>
             <h2>Schedule</h2>
           </div>
-          <p class="section-meta">Season dates run from April 27, 2026 through August 31, 2026.</p>
+          <p class="section-meta" id="scheduleMeta"></p>
         </div>
 
+        <p class="admin-note page-note">Tee times start at 5:00 PM and are first come, first served — no set tee order.</p>
         <div id="scheduleContainer" class="stack-lg"></div>
       </section>
 
@@ -197,6 +199,7 @@
           <p class="section-meta" id="matchupMeta"></p>
         </div>
 
+        <p class="admin-note page-note">Tee times start at 5:00 PM and are first come, first served — no set tee order.</p>
         <div id="nextMatchupsContainer" class="stack-lg"></div>
       </section>
 
@@ -261,9 +264,19 @@
                   <p class="section-kicker">Admin</p>
                   <h3>Schedule Editor</h3>
                 </div>
-                <button class="btn btn-primary" id="regenerateScheduleBtn" type="button">Regenerate Standard Schedule</button>
               </div>
-              <p class="admin-note">The standard generator creates a double round robin for the current team list. The extra Monday on August 31 is reserved as a flexible league night and can be edited here.</p>
+              <div class="stack-md" style="margin-bottom:12px">
+                <label class="compact-field" style="max-width:180px">
+                  <span>Number of Weeks</span>
+                  <input type="number" id="scheduleNumWeeks" min="1" max="52" value="19">
+                </label>
+                <label class="compact-field">
+                  <span>Week 1 Date</span>
+                  <input type="date" id="scheduleStartDate">
+                </label>
+                <button class="btn btn-primary" id="generateScheduleBtn" type="button" style="align-self:start">Generate Schedule</button>
+              </div>
+              <p class="admin-note">Generates weekly dates from Week 1. Matchups cycle the 9-week round robin pattern. Edit individual weeks below.</p>
               <div id="scheduleAdminContainer" class="stack-md"></div>
             </section>
           </div>
@@ -278,6 +291,17 @@
             </div>
             <p class="admin-note">Registered subs can be assigned to any player slot on the scores page. Their handicap updates as they play.</p>
             <div id="subAdminContainer" class="stack-md"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-header compact-header">
+              <div>
+                <p class="section-kicker">Admin</p>
+                <h3>Course Settings</h3>
+              </div>
+            </div>
+            <p class="admin-note">Par and hole handicap values are saved per year. Changing them only affects the selected year — other years are unaffected.</p>
+            <div id="courseAdminContainer" class="stack-md"></div>
           </section>
         </div>
       </details>

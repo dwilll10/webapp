@@ -56,6 +56,10 @@ select {
 .eyebrow,
 .section-kicker,
 .section-meta,
+.page-note {
+  margin: 20px 0 28px;
+  font-weight: 600;
+}
 .admin-note,
 .compact-field span {
   margin: 0;
@@ -470,6 +474,18 @@ tbody tr:last-child td {
   gap: 12px;
 }
 
+.schedule-generate-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 8px;
+}
+
+.schedule-generate-form .compact-field:first-child {
+  flex: 1 1 180px;
+}
+
 .week-admin-fields {
   grid-template-columns: 1fr auto;
   align-items: end;
@@ -532,6 +548,107 @@ tbody tr:last-child td {
 .net-score {
   opacity: 0.7;
   font-style: italic;
+}
+
+/* -------------------------------------------------------------------------
+   Year selector
+------------------------------------------------------------------------- */
+
+.year-bar {
+  display: flex;
+}
+
+#scoreWeekSelect.year-select {
+  background: rgba(180, 220, 185, 0.85);
+  border-color: rgba(100, 160, 110, 0.4);
+}
+
+.year-select {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 251, 245, 0.8);
+  box-shadow: var(--shadow);
+  padding: 12px 16px;
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23555' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+.course-hole-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.course-nine-section {
+  min-width: 0;
+}
+
+.course-hole-header,
+.course-hole-row {
+  display: grid;
+  grid-template-columns: 36px 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.course-hole-header {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 6px;
+  text-align: center;
+}
+
+.course-hole-header span:first-child {
+  text-align: left;
+}
+
+.course-hole-num {
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.course-hole-row input {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--ink);
+  text-align: center;
+}
+
+@media (max-width: 980px) {
+  .course-hole-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.init-year-panel {
+  border: 2px dashed var(--line);
+  border-radius: 18px;
+  padding: 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.init-year-panel h3 {
+  margin: 0;
 }
 
 /* -------------------------------------------------------------------------
