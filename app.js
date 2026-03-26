@@ -204,7 +204,7 @@ function normalizeState(rawState) {
       id: week.id || `week-${weekIndex + 1}`,
       label: week.label || `Week ${weekIndex + 1}`,
       date: week.date || seasonDates()[weekIndex] || "",
-      nines: week.nines === "back" ? "back" : "front",
+      nines: week.nines === "back" || week.nines === "front" ? week.nines : (weekIndex % 2 === 0 ? "front" : "back"),
       matches: Array.isArray(week.matches)
         ? week.matches.map((match, matchIndex) => ({
           id: match.id || `match-${weekIndex + 1}-${matchIndex + 1}`,
@@ -317,9 +317,10 @@ function calculateTeamNetPoints(week, match) {
     - team.players.reduce((s, p) => s + (getEffectiveHandicap(week.id, match.id, p.id) ?? 0), 0)
   );
 
-  if (net[0] < net[1]) return { teamA: 2, teamB: 0 };
-  if (net[1] < net[0]) return { teamA: 0, teamB: 2 };
-  return { teamA: 1, teamB: 1 };
+  const pts = net[0] < net[1] ? { teamA: 2, teamB: 0 }
+            : net[1] < net[0] ? { teamA: 0, teamB: 2 }
+            : { teamA: 1, teamB: 1 };
+  return { ...pts, netA: net[0], netB: net[1] };
 }
 
 function computeTeamPoints(teamId) {
@@ -335,13 +336,16 @@ function computeTeamPoints(teamId) {
       const teamB = getTeam(match.teamBId);
       if (!teamA || !teamB) continue;
 
+      const sortedA = getSortedPlayers(week.id, match.id, teamA);
+      const sortedB = getSortedPlayers(week.id, match.id, teamB);
+
       // Individual hole points
       for (let i = 0; i < 2; i++) {
         const { pointsA, pointsB } = calculateMatchPoints(
-          getScoreEntry(week.id, match.id, teamA.players[i].id).holes,
-          getScoreEntry(week.id, match.id, teamB.players[i].id).holes,
-          getEffectiveHandicap(week.id, match.id, teamA.players[i].id),
-          getEffectiveHandicap(week.id, match.id, teamB.players[i].id),
+          getScoreEntry(week.id, match.id, sortedA[i].id).holes,
+          getScoreEntry(week.id, match.id, sortedB[i].id).holes,
+          getEffectiveHandicap(week.id, match.id, sortedA[i].id),
+          getEffectiveHandicap(week.id, match.id, sortedB[i].id),
           holeHandicaps,
         );
         const pts = isA ? pointsA : pointsB;
@@ -380,6 +384,7 @@ function renderHandicaps() {
   const playerRows = getPlayerRows().map((row) => {
     const handicap = calculateHandicap(row.playerId);
     const scoreList = getPlayerRounds(row.playerId)
+      .slice(-3)
       .map((round) => `${round.weekLabel}: ${round.total}`)
       .join(" | ") || "No scores yet";
     return `
@@ -395,7 +400,7 @@ function renderHandicaps() {
   const subRows = (state.subPlayers || []).map((sub) => {
     const handicap = calculateSubHandicap(sub.id);
     const rounds = getSubRounds(sub.id);
-    const scoreList = rounds.map((r) => `${r.weekLabel}: ${r.total}`).join(" | ") || "No scores yet";
+    const scoreList = rounds.slice(-3).map((r) => `${r.weekLabel}: ${r.total}`).join(" | ") || "No scores yet";
     return `
       <tr>
         <td class="team-cell">${escapeHtml(sub.name)}</td>
@@ -482,10 +487,14 @@ function renderScoreMatchCard(week, match) {
 
   const holeHandicaps = week.nines === "back" ? BACK_NINE_HOLE_HANDICAPS : FRONT_NINE_HOLE_HANDICAPS;
 
-  // Pair A[0] vs B[0] and A[1] vs B[1]
+  // Sort each team by handicap so lowest-hcp player is always "player A"
+  const sortedA = getSortedPlayers(week.id, match.id, teamA);
+  const sortedB = getSortedPlayers(week.id, match.id, teamB);
+
+  // Pair lowest-hcp vs lowest-hcp, higher vs higher
   const pairs = [0, 1].map((i) => {
-    const pA = teamA.players[i];
-    const pB = teamB.players[i];
+    const pA = sortedA[i];
+    const pB = sortedB[i];
     return calculateMatchPoints(
       getScoreEntry(week.id, match.id, pA.id).holes,
       getScoreEntry(week.id, match.id, pB.id).holes,
@@ -501,12 +510,12 @@ function renderScoreMatchCard(week, match) {
   const teamPts = calculateTeamNetPoints(week, match);
   const fmtPts = (n) => n % 1 === 0 ? `${n}` : n.toFixed(1);
 
-  const summaryRow = (teamName, indiv, teamNet, total) => `
+  const summaryRow = (teamName, indiv, teamNet, total, netScore) => `
     <div class="match-summary-row">
       <span class="match-summary-team">${escapeHtml(teamName)}</span>
       <span class="match-summary-detail">
         ${fmtPts(indiv)} individual
-        + ${teamNet !== null ? teamNet : "—"} team
+        + ${teamNet !== null ? `${teamNet} team <span class="net-score">(net ${netScore})</span>` : "—"}
         = <strong>${teamNet !== null ? fmtPts(total) : "—"} pts</strong>
       </span>
     </div>
@@ -522,14 +531,14 @@ function renderScoreMatchCard(week, match) {
         <div class="score-note">${formatDate(week.date)} · ${week.nines === "back" ? "Back 9" : "Front 9"}</div>
       </div>
       <div class="score-grid">
-        ${renderPlayerScoreCard(week.id, match.id, teamA.name, teamA.players[0], week.nines, pairs[0].pointsA, pairs[0].strokeHolesA)}
-        ${renderPlayerScoreCard(week.id, match.id, teamA.name, teamA.players[1], week.nines, pairs[1].pointsA, pairs[1].strokeHolesA)}
-        ${renderPlayerScoreCard(week.id, match.id, teamB.name, teamB.players[0], week.nines, pairs[0].pointsB, pairs[0].strokeHolesB)}
-        ${renderPlayerScoreCard(week.id, match.id, teamB.name, teamB.players[1], week.nines, pairs[1].pointsB, pairs[1].strokeHolesB)}
+        ${renderPlayerScoreCard(week.id, match.id, teamA.name, sortedA[0], week.nines, pairs[0].pointsA, pairs[0].strokeHolesA)}
+        ${renderPlayerScoreCard(week.id, match.id, teamA.name, sortedA[1], week.nines, pairs[1].pointsA, pairs[1].strokeHolesA)}
+        ${renderPlayerScoreCard(week.id, match.id, teamB.name, sortedB[0], week.nines, pairs[0].pointsB, pairs[0].strokeHolesB)}
+        ${renderPlayerScoreCard(week.id, match.id, teamB.name, sortedB[1], week.nines, pairs[1].pointsB, pairs[1].strokeHolesB)}
       </div>
       <div class="match-summary">
-        ${summaryRow(teamA.name, indivA, teamPts ? teamPts.teamA : null, indivA + (teamPts?.teamA ?? 0))}
-        ${summaryRow(teamB.name, indivB, teamPts ? teamPts.teamB : null, indivB + (teamPts?.teamB ?? 0))}
+        ${summaryRow(teamA.name, indivA, teamPts ? teamPts.teamA : null, indivA + (teamPts?.teamA ?? 0), teamPts?.netA)}
+        ${summaryRow(teamB.name, indivB, teamPts ? teamPts.teamB : null, indivB + (teamPts?.teamB ?? 0), teamPts?.netB)}
       </div>
     </article>
   `;
@@ -1170,6 +1179,15 @@ function getEffectiveHandicap(weekId, matchId, playerId) {
   return calculateHandicap(playerId, weekId);
 }
 
+// Returns team's players sorted ascending by effective handicap (lowest hcp = "player A")
+function getSortedPlayers(weekId, matchId, team) {
+  return [...team.players].sort((a, b) => {
+    const hA = getEffectiveHandicap(weekId, matchId, a.id) ?? 0;
+    const hB = getEffectiveHandicap(weekId, matchId, b.id) ?? 0;
+    return hA - hB;
+  });
+}
+
 function renderStats() {
   const rows = [];
 
@@ -1264,9 +1282,11 @@ function collectPlayerStats(playerId) {
       const teamA = getTeam(match.teamAId);
       const teamB = getTeam(match.teamBId);
       if (!teamA || !teamB) return;
+      const sortedA = getSortedPlayers(week.id, match.id, teamA);
+      const sortedB = getSortedPlayers(week.id, match.id, teamB);
       for (let i = 0; i < 2; i++) {
-        const pA = teamA.players[i];
-        const pB = teamB.players[i];
+        const pA = sortedA[i];
+        const pB = sortedB[i];
         if (pA.id !== playerId && pB.id !== playerId) continue;
         const { pointsA, pointsB } = calculateMatchPoints(
           getScoreEntry(week.id, match.id, pA.id).holes,
@@ -1300,9 +1320,11 @@ function collectSubStats(subId) {
       const teamA = getTeam(match.teamAId);
       const teamB = getTeam(match.teamBId);
       if (!teamA || !teamB) return;
+      const sortedA = getSortedPlayers(week.id, match.id, teamA);
+      const sortedB = getSortedPlayers(week.id, match.id, teamB);
       for (let i = 0; i < 2; i++) {
-        const pA = teamA.players[i];
-        const pB = teamB.players[i];
+        const pA = sortedA[i];
+        const pB = sortedB[i];
         if (pA.id !== regularPlayerId && pB.id !== regularPlayerId) continue;
         const { pointsA, pointsB } = calculateMatchPoints(
           getScoreEntry(week.id, match.id, pA.id).holes,
@@ -1386,6 +1408,7 @@ function createStandardSchedule(teams, dates) {
     id: `week-${index + 1}`,
     label: `Week ${index + 1}`,
     date,
+    nines: index % 2 === 0 ? "front" : "back",
     matches: (rounds[index] || []).map((pairing, pairingIndex) => ({
       id: `match-${index + 1}-${pairingIndex + 1}`,
       teamAId: pairing[0],

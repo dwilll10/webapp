@@ -59,13 +59,15 @@ Five files in the repo root:
 
 **Routing:** Hash changes call `renderPageFromHash()` which toggles `is-active` on `<section data-page="...">` elements.
 
-**Scheduling:** `buildDoubleRoundRobin()` generates an 18-round double round-robin. Season dates are hardcoded in `seasonDates()` (19 Mondays, Apr 27 – Aug 31, 2026). Changing the season requires editing that function. Date cascade: changing a week's date in admin shifts all subsequent weeks by the same delta.
+**Scheduling:** `buildDoubleRoundRobin()` generates an 18-round double round-robin. Season dates are hardcoded in `seasonDates()` (19 Mondays, Apr 27 – Aug 31, 2026). Changing the season requires editing that function. Date cascade: changing a week's date in admin shifts all subsequent weeks by the same delta. New/regenerated schedules default to alternating Front 9 / Back 9 starting with Front 9 (odd-indexed weeks = front, even-indexed = back).
 
 **Handicap (regular players):** `calculateHandicap(playerId, beforeWeekId)` — treats `startingHandicap` as two phantom prior rounds (prepends `[sh, sh]` before actual over-par values), then slices to the last 3, averages, and rounds. This means the starting handicap decays naturally as real rounds accumulate and drops out after 3 rounds. Accepts optional `beforeWeekId` to exclude a specific week's scores (used on the Scores page to freeze handicaps at pre-week values). Par is per-nine (front: 36, back: 35).
 
 **Handicap (substitutes):** `calculateSubHandicap(subId)` — same logic as regular players but sources rounds from `getSubRounds(subId)`, which scans `subAssignments` to find matches where the sub played and pulls scores from the regular player's score slot. Falls back to `sub.startingHandicap`.
 
 **Effective handicap:** `getEffectiveHandicap(weekId, matchId, playerId)` — returns the sub's handicap (via `calculateSubHandicap(subId, weekId)`) if one is assigned for that slot, otherwise returns the regular player's handicap (via `calculateHandicap(playerId, weekId)`). Both calls pass `weekId` as `beforeWeekId` to freeze handicaps at pre-week values. Used everywhere points and strokes are calculated.
+
+**Player pairing:** `getSortedPlayers(weekId, matchId, team)` — returns a team's players sorted ascending by effective handicap. The lowest-handicap player is always "player A" and plays against the other team's lowest-handicap player. Used consistently in `renderScoreMatchCard`, `computeTeamPoints`, `collectPlayerStats`, and `collectSubStats`.
 
 ## Points System
 
@@ -102,6 +104,12 @@ Each player card shows:
 - Hole highlights: green = won hole, amber = tied hole; stroke-dot (+1) on stroke holes
 - `Hcp:` and stroke count in the score-summary row
 
+Match summary at the bottom of each match card shows individual points + team net points per team. Team net score (sum of actual scores minus handicaps) is displayed inline as `(net N)` so players can see the values being compared.
+
+## Handicaps Page
+
+The **Latest Scores** column shows the last 3 rounds used for handicap calculation (`.slice(-3)` on `getPlayerRounds` / `getSubRounds`). This matches exactly the scores feeding into `calculateHandicap`.
+
 ## Substitute Players
 
 - **Roster:** `state.subPlayers` — a global list managed in the "Substitute Players" admin panel.
@@ -115,7 +123,7 @@ Each player card shows:
 All inside `#adminDrawer` (hidden until logged in). Three panels:
 
 1. **Teams and Players** — dropdown to select a team; edit name, points, player names, and starting handicaps per player.
-2. **Schedule Editor** — dropdown to select a week; edit date (cascades to subsequent weeks), front/back nine, and match pairings.
+2. **Schedule Editor** — dropdown to select a week; edit date (cascades to subsequent weeks), front/back nine, and match pairings. New schedules default to alternating Front 9 / Back 9.
 3. **Substitute Players** — list of registered subs; add/remove subs and set their name and starting handicap.
 
 Module-level vars `adminSelectedTeamId` and `adminSelectedWeekId` survive `renderAll()` calls to preserve dropdown selections.
