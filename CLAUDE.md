@@ -61,7 +61,7 @@ Global substitute roster is stored separately at `league/subs` as `{ subPlayers:
 
 **Auth gating:** `auth.onAuthStateChanged` shows/hides the admin drawer. Score entry inputs and sub-player dropdowns are rendered with `disabled`/omitted when `auth.currentUser` is null; `bindScoreInputs()` early-returns for non-admins.
 
-**Routing:** Hash changes call `renderPageFromHash()` which toggles `is-active` on `<section data-page="...">` elements.
+**Routing:** Hash changes call `renderPageFromHash()` which toggles `is-active` on `<section data-page="...">` elements. When navigating to `#scores`, it also calls `getDefaultScoresWeekId()` to set `state.selectedWeekId` before rendering — defaults to the most recently completed week (last week whose date ≤ today), or week 1 if the season hasn't started yet.
 
 **Scheduling:** `buildDoubleRoundRobin()` generates an 18-round double round-robin. `lastMondayOfApril(year)` computes the default Week 1 date (replaces old hardcoded `seasonDates()`). Admin schedule editor has "Number of Weeks" and "Week 1 Date" inputs; `generateScheduleBtn` regenerates from those. Date cascade: changing a week's date in admin shifts all subsequent weeks by the same delta. New/regenerated schedules default to alternating Front 9 / Back 9 starting with Front 9 (odd-indexed weeks = front, even-indexed = back).
 
@@ -114,7 +114,7 @@ Each player card shows:
 
 Match summary at the bottom of each match card shows individual points + team net points per team. Team net score (sum of actual scores minus handicaps) is displayed inline as `(net N)` so players can see the values being compared.
 
-The **week selector** (`#scoreWeekSelect`) uses the `.year-select` pill style with a green tint. It does NOT call `saveState()` on change — the selected week is pure local UI state. This prevents `onSnapshot` from reverting the selection.
+The **week selector** (`#scoreWeekSelect`) uses the `.year-select` pill style with a green tint. It does NOT call `saveState()` on change — the selected week is pure local UI state. This prevents `onSnapshot` from reverting the selection. On each navigation to the scores page, `state.selectedWeekId` is reset to the smart default (most recently completed week, or week 1 before season start).
 
 ## Handicaps Page
 
