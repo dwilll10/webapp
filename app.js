@@ -1385,7 +1385,10 @@ function calculateHandicap(playerId, beforeWeekId = null) {
 
   const allRounds = getPlayerRounds(playerId);
   const actualRounds = beforeWeekId
-    ? allRounds.filter((r) => r.weekId !== beforeWeekId)
+    ? (() => {
+        const week = (state.schedule || []).find((w) => w.id === beforeWeekId);
+        return week ? allRounds.filter((r) => r.weekDate < week.date) : allRounds;
+      })()
     : allRounds;
 
   // Starting handicap counts as two prior rounds; they drop off as real rounds accumulate
@@ -1494,7 +1497,10 @@ function calculateSubHandicap(subId, beforeWeekId = null) {
 
   const allRounds = getSubRounds(subId);
   const actualRounds = beforeWeekId
-    ? allRounds.filter((r) => r.weekId !== beforeWeekId)
+    ? (() => {
+        const week = (state.schedule || []).find((w) => w.id === beforeWeekId);
+        return week ? allRounds.filter((r) => r.weekDate < week.date) : allRounds;
+      })()
     : allRounds;
 
   const overParValues = [
