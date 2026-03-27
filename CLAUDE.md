@@ -21,9 +21,9 @@ No build step. Firebase CLI was installed to `~/.npm-global/bin/firebase` (no np
 
 Five files in the repo root:
 
-- **`index.html`** — App shell; hash-based routing (`#home`, `#handicaps`, `#scores`, `#schedule`, `#matchups`, `#stats`); login modal HTML; Firebase SDK script tags
+- **`index.html`** — App shell; hash-based routing (`#home`, `#handicaps`, `#scores`, `#schedule`, `#matchups`, `#stats`); login modal HTML; Firebase SDK script tags; Google Fonts (Barlow + Fraunces loaded together, Chewy loaded via a separate `<link>` tag — must stay separate or it silently fails)
 - **`app.js`** — All application logic: Firebase init, state sync, auth, routing, rendering, scheduling, handicap calculation
-- **`styles.css`** — Design system via CSS custom properties; responsive at 980px breakpoint
+- **`styles.css`** — Design system via CSS custom properties; responsive at 980px breakpoint. Fonts: body uses Barlow, headings use Fraunces, `h1` uses Chewy (weight 400, color `#a45526` to match the flag in the hero illustration)
 - **`firestore.rules`** — Public read, authenticated write
 - **`firebase.json`** — Hosting (public dir = `.`) + Firestore config; location `northamerica-northeast1`
 
