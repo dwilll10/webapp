@@ -83,7 +83,8 @@ h1 {
   line-height: 0.92;
   max-width: 8ch;
   font-family: "Chewy", cursive;
-  color: #e07b2a;
+  font-weight: 400;
+  color: #a45526;
 }
 
 .hero-text {
