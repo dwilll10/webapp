@@ -292,6 +292,15 @@ function bindNavigation() {
   renderPageFromHash();
 }
 
+function getDefaultScoresWeekId() {
+  const schedule = state.schedule || [];
+  if (!schedule.length) return "";
+  const today = new Date().toISOString().split("T")[0];
+  const completed = schedule.filter((w) => w.date && w.date <= today);
+  if (!completed.length) return schedule[0].id;
+  return completed[completed.length - 1].id;
+}
+
 function renderPageFromHash() {
   const requested = window.location.hash.replace("#", "") || "home";
   const pages = [...document.querySelectorAll("[data-page]")];
@@ -300,6 +309,12 @@ function renderPageFromHash() {
   pages.forEach((page) => {
     page.classList.toggle("is-active", page.dataset.page === activePage);
   });
+
+  if (activePage === "scores") {
+    state.selectedWeekId = getDefaultScoresWeekId();
+    renderWeekOptions();
+    renderScores();
+  }
 }
 
 // ---------------------------------------------------------------------------
