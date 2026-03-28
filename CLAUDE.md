@@ -154,15 +154,92 @@ Module-level vars `adminSelectedTeamId` and `adminSelectedWeekId` survive `rende
 
 ## iOS / Mobile
 
-Three options if the app ever needs to ship as a mobile app:
+The app is shipped as a **PWA**. Users add it to their iPhone home screen from Safari (Share → Add to Home Screen). No App Store, no Apple Developer account needed. The web app in the browser and the home screen app co-exist — both point to the same Firebase backend.
 
-| Option | Effort | Notes |
-|--------|--------|-------|
-| **PWA** | 1–2 hrs | `manifest.json` + service worker + meta tags. "Add to Home Screen" from Safari. No App Store. **Recommended for this app.** |
-| **Capacitor wrapper** | 1–2 days | Wraps existing HTML/CSS/JS in a native iOS shell. Real `.ipa`, App Store eligible. Needs Mac + Xcode + Apple Developer account ($99/yr). |
-| **Native Swift rewrite** | Weeks | Not worth it for a 10-team league app. |
+### PWA files
+- **`manifest.json`** — app name, theme color (`#4a7a52`), icons
+- **`sw.js`** — service worker; caches `/`, `index.html`, `app.js`, `styles.css` for offline use. Firebase/CDN requests pass through to the network.
+- **`icons/icon-192.png`** and **`icons/icon-512.png`** — home screen icons (generated from `icons/icon.svg`)
+- **`index.html`** — manifest link, Apple meta tags, SW registration script
+- **`firebase.json`** — `/sw.js` gets its own `no-cache` + `Service-Worker-Allowed: /` header rule
 
-PWA files that would need to be added/changed: `manifest.json` (new), `sw.js` (new service worker), `index.html` (manifest link + Apple meta tags), `firebase.json` (service worker headers).
+### ⚠️ Cache version — bump on every deploy
+Every time `app.js` or `styles.css` changes, increment the cache version in `sw.js`:
+```js
+const CACHE = 'bogeys-v9'; // bump to v10, v11, etc. on each deploy
+```
+Without this, users (including the home screen app) will be served stale files from the old cache.
+
+### Mobile layout (≤980px and ≤480px breakpoints in `styles.css`)
+- Hero illustration is restored on mobile at a compact size, beside the "Bogeys and Bunkers" h1
+- Eyebrow ("Monday Night Golf League — Pine Grove") sits on its own full-width row above the h1
+- Hero tagline paragraph is hidden on mobile
+- Card/panel/grid padding and gaps are tightened at ≤480px
+- `body` and `html` have `overflow-x: hidden` to prevent horizontal page scroll
+- `min-width: 0` on `.page-section` prevents CSS Grid blowout from wide tables
+
+### Stats page sticky first column
+`position: sticky` on `<td>` is broken in iOS Safari inside `overflow-x: auto` containers. The fix uses JavaScript instead:
+- `bindStatsStickyColumn()` in `app.js` — listens to scroll on `#stats .table-wrap` and applies `translateX(scrollLeft)` to each first-column cell
+- `#statsTable` uses `width: max-content; min-width: 100%` so the table genuinely overflows its container and `.table-wrap` becomes the scroll container (not the page)
+
+---
+
+## Planned Feature: Player-Linked User Accounts
+
+Goal: each player gets their own Firebase login and can only enter their own scores. Admin retains full access.
+
+### New Firestore doc: `league/userAccess`
+```js
+{
+  adminUid: "firebase-uid-of-admin",
+  players: { "firebase-uid": "player-id", ... }
+}
+```
+Create manually in Firebase Console on first deploy — set `adminUid` to the admin's UID, `players` to `{}`.
+
+### Key `app.js` changes
+- **New module-level vars:** `userAccess` (cached doc) and `currentPlayerId` (linked player for signed-in user; `null` for admin)
+- **`isAdmin()` helper** replaces all `!!auth.currentUser` checks:
+  ```js
+  function isAdmin() {
+    return !!auth.currentUser && userAccess?.adminUid === auth.currentUser.uid;
+  }
+  ```
+- **`subscribeToAuthState()`** — make `async`; fetch `league/userAccess` after login before rendering. Admin gets drawer + `currentPlayerId = null`. Player gets `currentPlayerId` set to their linked playerId; drawer stays hidden.
+- **`renderPlayerScoreCard()`** — add `canEnterScores = isAdmin() || currentPlayerId === player.id`. Use as the disabled condition on hole inputs (was `isAdmin`). Sub dropdown stays admin-only.
+- **`bindScoreInputs()`** — wrap sub-toggle binding in `if (isAdmin())`. Add save guard in `change` handler: `if (!isAdmin() && currentPlayerId !== playerId) return;`.
+- **`renderAll()`** — call `renderPlayerAccountsAdmin()` when `isAdmin()`.
+
+### New admin panel: "Player Accounts"
+- Renders a row per player with a UID text input and Unlink button
+- `savePlayerLink(playerId, uid)` — writes `players[uid] = playerId` to `league/userAccess` with merge
+- `removePlayerLink(playerId)` — deletes that player's entry, saves with merge
+- Add `<div id="playerAccountsContainer">` panel to `index.html` admin drawer (after Course Settings)
+
+### `index.html` UX change
+- Rename "Admin Login" button and modal title → "Sign In" (players will use this too)
+
+### `firestore.rules` changes
+```
+function isAdmin() {
+  return request.auth != null
+    && get(/databases/$(database)/documents/league/userAccess).data.adminUid == request.auth.uid;
+}
+match /league/userAccess { allow write: if isAdmin(); }
+match /league/subs       { allow write: if isAdmin(); }
+match /league/{year} {
+  allow write: if isAdmin();
+  allow update: if request.auth != null
+    && get(/databases/$(database)/documents/league/userAccess).data.players[request.auth.uid] != null;
+}
+```
+> Note: `league/{year}` is a single large doc — Firestore can't enforce field-level writes on it. Players could theoretically overwrite the whole doc via the SDK. Acceptable for a small private league; full enforcement requires splitting scores into a subcollection.
+
+### How to create player accounts
+1. Firebase Console → Authentication → Add user (email + temp password)
+2. Copy the generated User UID
+3. In the app as admin → Player Accounts panel → paste UID next to player name
 
 ---
 

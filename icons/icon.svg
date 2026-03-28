@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#c8e6d0"/>
+      <stop offset="100%" stop-color="#eef6eb"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5a9060"/>
+      <stop offset="100%" stop-color="#3d6840"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="75%" cy="20%" r="25%">
+      <stop offset="0%" stop-color="#fffde0" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#f5e87a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Rounded background -->
+  <rect width="512" height="512" rx="96" fill="url(#sky)"/>
+
+  <!-- Sun glow -->
+  <circle cx="390" cy="100" r="120" fill="url(#sun)"/>
+  <circle cx="390" cy="100" r="38" fill="#fffde8" opacity="0.7"/>
+
+  <!-- Far hill -->
+  <ellipse cx="256" cy="390" rx="340" ry="140" fill="#4a7a52" opacity="0.45"/>
+
+  <!-- Ground / fairway -->
+  <path d="M0,360 Q128,320 256,345 Q384,370 512,335 L512,512 L0,512Z" fill="url(#green)"/>
+
+  <!-- Putting green -->
+  <ellipse cx="290" cy="358" rx="130" ry="38" fill="#72b872"/>
+
+  <!-- Bunker -->
+  <ellipse cx="152" cy="378" rx="68" ry="26" fill="#dfc98a" opacity="0.9"/>
+
+  <!-- Pin shadow -->
+  <ellipse cx="293" cy="362" rx="14" ry="5" fill="rgba(0,0,0,0.18)"/>
+
+  <!-- Pin stick -->
+  <rect x="286" y="200" width="8" height="162" rx="3" fill="#5d3a1a"/>
+
+  <!-- Flag -->
+  <polygon points="294,200 370,232 294,264" fill="#a45526"/>
+  <polygon points="294,200 370,232 294,232" fill="#c06438" opacity="0.4"/>
+
+  <!-- Golf ball -->
+  <circle cx="188" cy="366" r="20" fill="white" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.15))"/>
+  <circle cx="182" cy="360" r="4" fill="#eee" opacity="0.7"/>
+  <circle cx="193" cy="363" r="3.5" fill="#eee" opacity="0.7"/>
+  <circle cx="184" cy="372" r="3.5" fill="#eee" opacity="0.7"/>
+
+  <!-- Border -->
+  <rect width="512" height="512" rx="96" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="4"/>
+</svg>

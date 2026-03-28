@@ -13,6 +13,10 @@
   --shadow: 0 24px 70px rgba(52, 73, 56, 0.13);
 }
 
+html {
+  overflow-x: hidden;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -20,6 +24,7 @@
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: hidden;
   color: var(--ink);
   font-family: "Barlow", sans-serif;
   background:
@@ -43,6 +48,7 @@ select {
   width: min(1240px, calc(100% - 32px));
   margin: 0 auto;
   padding: 28px 0 40px;
+  padding-bottom: max(40px, env(safe-area-inset-bottom));
 }
 
 .hero {
@@ -154,6 +160,7 @@ h1 {
 .page-section {
   display: none;
   padding: 24px;
+  min-width: 0; /* prevent grid item from expanding to fit wide table content */
 }
 
 .page-section.is-active {
@@ -825,5 +832,154 @@ th[data-col][data-dir="desc"].sort-active::after {
 
   .hole-total {
     grid-column: 3;
+  }
+
+  /* Compact illustration on small screens */
+  .hero-illustration svg {
+    height: 130px;
+    width: 100%;
+  }
+
+  .hero-text {
+    display: none;
+  }
+
+  .hero {
+    margin-bottom: 18px;
+  }
+}
+
+/* Sticky first column on stats table for mobile horizontal scroll.
+   position:sticky on td is unreliable in iOS Safari inside overflow-x:auto,
+   so the actual pinning is done via JS translateX on scroll (bindStatsStickyColumn).
+   width:auto lets the table grow so .table-wrap becomes the scroll container. */
+#statsTable {
+  width: max-content;
+  min-width: 100%;
+}
+
+#statsTable th:first-child,
+#statsTable td:first-child {
+  z-index: 1;
+  background: #fffdf8;
+  will-change: transform;
+}
+
+#statsTable th:first-child {
+  background: var(--panel);
+}
+
+@media (max-width: 480px) {
+  /* Tighter shell and section padding */
+  .page-shell {
+    width: min(1240px, calc(100% - 24px));
+    padding-top: 18px;
+  }
+
+  .page-section {
+    padding: 16px;
+  }
+
+  .panel {
+    padding: 14px;
+  }
+
+  /* Compact card padding */
+  .match-card,
+  .week-card,
+  .team-admin-card,
+  .schedule-edit-card {
+    padding: 14px;
+  }
+
+  .player-score-card {
+    padding: 12px;
+  }
+
+  /* Tighter gaps */
+  .layout,
+  .admin-grid {
+    gap: 14px;
+  }
+
+  .stack-lg,
+  .stack-md {
+    gap: 12px;
+  }
+
+  .score-grid {
+    gap: 10px;
+  }
+
+  .section-header {
+    margin-bottom: 12px;
+  }
+
+  .match-header,
+  .week-card-header,
+  .team-admin-header {
+    margin-bottom: 10px;
+  }
+
+  /* Tighter hole grid */
+  .hole-grid {
+    gap: 5px;
+  }
+
+  .hole-field {
+    gap: 3px;
+  }
+
+  /* Compact table cells for handicaps page */
+  th,
+  td {
+    padding: 10px 8px;
+  }
+
+  /* Side-by-side title + illustration layout on mobile.
+     display:contents on hero-right makes its children (illustration + nav)
+     direct grid items of .hero so they can be placed independently. */
+  .hero {
+    grid-template-columns: 1fr 100px;
+    grid-template-rows: auto auto auto;
+    row-gap: 8px;
+    column-gap: 12px;
+  }
+
+  /* Dissolve both wrappers so eyebrow, h1, illustration, nav
+     are all direct grid items and can be placed independently */
+  .hero-copy,
+  .hero-right {
+    display: contents;
+  }
+
+  /* Row 1: eyebrow spans full width */
+  #heroEyebrow {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    margin: 0;
+  }
+
+  /* Row 2: h1 left, illustration right */
+  .hero h1 {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .hero-illustration {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: end;
+  }
+
+  .hero-illustration svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Row 3: nav chips full width */
+  .hero-nav {
+    grid-column: 1 / -1;
+    grid-row: 3;
   }
 }

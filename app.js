@@ -88,6 +88,7 @@ document.addEventListener("DOMContentLoaded", () => {
   bindGlobalActions();
   bindAuthActions();
   bindStatsSort();
+  bindStatsStickyColumn();
   subscribeToAuthState();
   subscribeToSubs();
   loadAvailableYears();
@@ -213,6 +214,17 @@ function bindStatsSort() {
     statsSort.col = col;
     renderStats();
   });
+}
+
+function bindStatsStickyColumn() {
+  const wrap = document.querySelector("#stats .table-wrap");
+  if (!wrap) return;
+  wrap.addEventListener("scroll", () => {
+    const x = wrap.scrollLeft;
+    document.querySelectorAll("#statsTable th:first-child, #statsTable td:first-child").forEach((cell) => {
+      cell.style.transform = `translateX(${x}px)`;
+    });
+  }, { passive: true });
 }
 
 async function handleLogin() {
