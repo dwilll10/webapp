@@ -17,11 +17,15 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
 
-// Capacitor haptics — graceful no-op on web
-const { Haptics, ImpactStyle } = window.Capacitor?.Plugins || {};
+// Capacitor plugins — graceful no-ops on web
+const { Haptics, ImpactStyle, StatusBar } = window.Capacitor?.Plugins || {};
 function triggerHaptic() {
   try { if (Haptics) Haptics.impact({ style: ImpactStyle?.Light || 'LIGHT' }); }
   catch (e) {}
+}
+if (StatusBar) {
+  StatusBar.setOverlaysWebView({ overlay: false });
+  StatusBar.setBackgroundColor({ color: '#4a7a52' });
 }
 
 function getDocRef(year) {
