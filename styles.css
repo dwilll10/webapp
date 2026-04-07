@@ -48,6 +48,7 @@ select {
   width: min(1240px, calc(100% - 32px));
   margin: 0 auto;
   padding: 28px 0 40px;
+  padding-top: max(28px, env(safe-area-inset-top));
   padding-bottom: max(40px, env(safe-area-inset-bottom));
 }
 
