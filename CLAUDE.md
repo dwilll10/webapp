@@ -251,6 +251,126 @@ match /league/{year} {
 
 ---
 
+## Planned Feature: Multi-League Architecture
+
+**Goal:** Support multiple independent leagues so the app can be published publicly on the App Store and Google Play. Each league has its own data, a shared member login (view-only), and a separate admin login. League creation is restricted to the native app (honor system).
+
+**Key decisions:**
+- Members are view-only — no score entry
+- League ID is a custom slug chosen at creation (e.g. `pinenightgolf`)
+- Existing Pine Grove / 2026 data will be migrated to the new structure
+- Native-only creation enforced by honor system (no Create button in web UI)
+
+### New Firestore Structure
+```
+/leagues/{leagueId}/
+  meta          → { leagueId, leagueName, adminUid, memberUid, createdAt }
+  years/{year}  → { teams, schedule, scores, subAssignments, selectedWeekId, courseData }
+  subs          → { subPlayers: [...] }
+```
+Replaces current flat `/league/{year}` and `/league/subs` paths.
+
+### Auth Model
+Two Firebase Auth accounts per league:
+- **Member account:** `{leagueId}@bogeysbunkers.golf` / member password → read-only view
+- **Admin account:** admin's own email / admin password → full write access
+
+`leagueMeta.memberUid` and `leagueMeta.adminUid` (stored in meta doc) determine roles.
+
+### isAdmin() Helper
+```javascript
+function isAdmin() {
+  return !!auth.currentUser && leagueMeta?.adminUid === auth.currentUser.uid;
+}
+```
+Replaces all `!!auth.currentUser` checks throughout `app.js`.
+
+### New Module-Level Vars (app.js)
+```javascript
+let currentLeagueId = null;
+let leagueMeta = null;
+
+function getLeagueDocRef(leagueId, year) {
+  return db.collection('leagues').doc(leagueId).collection('years').doc(String(year));
+}
+function getSubsRef(leagueId) {
+  return db.collection('leagues').doc(leagueId).collection('subs').doc('roster');
+}
+function getMetaRef(leagueId) {
+  return db.collection('leagues').doc(leagueId).collection('meta').doc('info');
+}
+```
+
+### Login Flow
+- **Member tab:** League ID + password → `signInWithEmailAndPassword('{leagueId}@bogeysbunkers.golf', password)`
+- **Admin tab:** Email + password → signs in, then queries leagues where `adminUid == uid`
+- Modal gets two tabs: `[League Member]` and `[Admin]`
+
+### Create League (native app only)
+New `renderCreateLeague()` function — shown only when `window.Capacitor` is defined. Collects:
+- League Name, League ID slug, member password, admin email, admin password
+
+On submit:
+1. Verify slug not taken (check `/leagues/{leagueId}/meta`)
+2. `auth.createUserWithEmailAndPassword(adminEmail, adminPw)` → save adminUid
+3. `auth.createUserWithEmailAndPassword('{leagueId}@bogeysbunkers.golf', memberPw)` → save memberUid
+4. Write meta doc
+5. Sign back in as admin
+
+### Welcome Screen
+When no league is loaded and user is not signed in, show a welcome screen with:
+- "Sign In to Your League" button → opens login modal
+- "Create a League" button → only rendered when `window.Capacitor` is defined
+
+### New firestore.rules
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function getMeta(leagueId) {
+      return get(/databases/$(database)/documents/leagues/$(leagueId)/meta).data;
+    }
+    function isLeagueMember(leagueId) {
+      return request.auth != null && getMeta(leagueId).memberUid == request.auth.uid;
+    }
+    function isLeagueAdmin(leagueId) {
+      return request.auth != null && getMeta(leagueId).adminUid == request.auth.uid;
+    }
+    match /leagues/{leagueId}/meta {
+      allow read: if isLeagueMember(leagueId) || isLeagueAdmin(leagueId);
+      allow create: if request.auth != null;
+      allow update, delete: if isLeagueAdmin(leagueId);
+    }
+    match /leagues/{leagueId}/years/{year} {
+      allow read: if isLeagueMember(leagueId) || isLeagueAdmin(leagueId);
+      allow write: if isLeagueAdmin(leagueId);
+    }
+    match /leagues/{leagueId}/subs {
+      allow read: if isLeagueMember(leagueId) || isLeagueAdmin(leagueId);
+      allow write: if isLeagueAdmin(leagueId);
+    }
+  }
+}
+```
+
+### Data Migration
+Copy existing data to new paths:
+- `/league/2026` → `/leagues/pinenightgolf/years/2026`
+- `/league/subs` → `/leagues/pinenightgolf/subs/roster`
+- Create `/leagues/pinenightgolf/meta` with existing admin's UID + new member account UID
+
+### Implementation Order
+1. `firestore.rules` rewrite + deploy
+2. Migration script (existing Pine Grove data)
+3. `app.js` — new vars + path helpers + `isAdmin()`
+4. `app.js` — update all Firestore path references
+5. `app.js` — rewrite auth flow (`subscribeToAuthState`, `handleLogin`)
+6. `app.js` — Create League flow + welcome screen
+7. `index.html` — two-tab login modal + welcome screen UI
+8. `npm run sync` + deploy
+
+---
+
 ## Capacitor iOS & Android App — IMPLEMENTED
 
 Capacitor wraps the webapp for native iOS and Android. Zero code rewrite — same Firebase backend, same HTML/CSS/JS. Web PWA, iOS app, and Android app all coexist.
