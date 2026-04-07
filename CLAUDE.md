@@ -248,3 +248,148 @@ match /league/{year} {
 - **`app.js` is one file** — keep additions in the same file
 - **No tests** — verify scoring/handicap logic manually against known inputs
 - **Firestore first-load seeding** — if `league/{year}` doesn't exist, the app seeds defaults only when an admin is logged in
+
+---
+
+## Planned Feature: Capacitor iOS & Android App
+
+Wrap the existing webapp in Capacitor to publish on the Apple App Store and Google Play Store. Zero code rewrite — same Firebase backend, same HTML/CSS/JS. Web PWA, iOS app, and Android app all coexist.
+
+### Prerequisites
+- Apple Developer Program ($99/yr) — required for App Store
+- Google Play Console account ($25 one-time) — required for Play Store
+- Xcode (full install from Mac App Store, ~10GB) — for iOS builds
+- Android Studio + Android SDK 35 — for Android builds
+
+### Critical: Do This First
+Update `firebase.json` ignore rules before running any `firebase deploy` after Capacitor is set up, or it will upload `www/`, `ios/`, `android/`, `node_modules/` to Firebase Hosting:
+```json
+"ignore": [
+  "firebase.json", "**/.*", "firestore.rules", "firestore.indexes.json",
+  "**/node_modules/**", "www/**", "ios/**", "android/**",
+  "copy-to-www.sh", "package.json", "package-lock.json", "capacitor.config.json"
+]
+```
+
+### Phase 1 — Foundation Setup (one agent, ~30 min)
+
+```bash
+npm init -y
+# Edit package.json: name → "bogeys-and-bunkers", add "private": true
+npm install @capacitor/core @capacitor/ios @capacitor/android
+npm install --save-dev @capacitor/cli @capacitor/assets
+npm install @capacitor/haptics @capacitor/status-bar @capacitor/splash-screen
+npx cap init "Bogeys and Bunkers" "com.bogeysbunkers.golf" --web-dir www
+npx cap add ios
+npx cap add android
+```
+
+Create `copy-to-www.sh`:
+```bash
+#!/bin/bash
+set -e
+mkdir -p www/icons
+cp index.html app.js styles.css manifest.json sw.js www/
+cp icons/icon-192.png icons/icon-512.png icons/icon.svg www/icons/
+echo "✓ www/ populated"
+```
+
+Add to `package.json` scripts:
+```json
+"sync": "bash copy-to-www.sh && npx cap sync",
+"open:ios": "npx cap open ios",
+"open:android": "npx cap open android"
+```
+
+`capacitor.config.json` plugin config to add after `npx cap init`:
+```json
+{
+  "appId": "com.bogeysbunkers.golf",
+  "appName": "Bogeys and Bunkers",
+  "webDir": "www",
+  "plugins": {
+    "SplashScreen": { "launchShowDuration": 2000, "launchAutoHide": true, "backgroundColor": "#4a7a52", "showSpinner": false },
+    "StatusBar": { "style": "LIGHT", "backgroundColor": "#4a7a52" }
+  }
+}
+```
+
+Create `.gitignore`:
+```
+node_modules/
+www/
+.firebase/
+*.DS_Store
+ios/App/App.xcworkspace/xcuserdata/
+android/.gradle/
+android/app/build/
+```
+
+Run: `npm run sync`
+
+### Phase 2 — Web Code Changes (one agent, ~20 min)
+
+**`index.html`** — add before `<script src="app.js"></script>`:
+```html
+<script src="capacitor.js"></script>
+```
+
+**`app.js`** — add after Firebase init, before `let state`:
+```javascript
+// Capacitor haptics — graceful no-op on web
+const { Haptics, ImpactStyle } = window.Capacitor?.Plugins || {};
+function triggerHaptic() {
+  try { if (Haptics) Haptics.impact({ style: ImpactStyle?.Light || 'LIGHT' }); }
+  catch (e) {}
+}
+```
+
+In `bindScoreInputs()` change handler (~line 855), add after `saveState()`:
+```javascript
+triggerHaptic();
+```
+
+Run: `npm run sync`
+
+### Phases 3, 4, 5 — Run in Parallel (after Phase 2)
+
+**iOS Agent (Phase 3):**
+- `npx cap open ios` → opens `ios/App/App.xcworkspace`
+- Bundle ID: `com.bogeysbunkers.golf`, iOS 16.0 minimum, iPhone only (Targeted Device Families = `1`)
+- Generate icons: create `resources/icon.png` (1024×1024, **flat square** — edit `icon.svg`, change `rx="96"` to `rx="0"`), then `npx capacitor-assets generate --ios`
+- Splash: `resources/splash.png` (2732×2732, `#4a7a52` bg, icon centered), `npx capacitor-assets generate --ios`
+- Archive → Distribute → App Store Connect → upload
+- App Store Connect: Category Sports, add screenshots, privacy policy URL
+
+**Android Agent (Phase 4):**
+- Install Android Studio + SDK 35, set `ANDROID_HOME`
+- `npx cap open android`
+- Verify `android/app/build.gradle`: `applicationId "com.bogeysbunkers.golf"`, `minSdkVersion 22`, `targetSdkVersion 35`
+- Adaptive icons: `resources/icon-foreground.png` (artwork, transparent bg, 66% canvas), `resources/icon-background.png` (solid `#4a7a52`)
+- `npx capacitor-assets generate --android`
+- Build signed AAB → keystore at `~/android-keystores/bogeys-bunkers-release.jks` — **back up keystore securely**
+- Upload to Play Console
+
+**Assets Agent (Phase 5):**
+- Flat icon source: edit `icon.svg` → `rx="0"` → export `resources/icon.png` at 1024×1024
+- Splash: 2732×2732 `#4a7a52` canvas, icon in center safe zone → `resources/splash.png`
+- App Store screenshots at 1290×2796px (6.7"): standings, score entry, handicaps, schedule
+- Play Store: phone screenshots + feature graphic (1024×500px)
+- Privacy policy: add `privacy.html` to repo root, deploy to `golfleagueapp-74095.web.app/privacy`
+
+### Ongoing Release Workflow
+
+After any web change:
+```bash
+# 1. Edit root files as usual
+# 2. Bump sw.js CACHE version (bogeys-v10, v11, etc.)
+~/.npm-global/bin/firebase deploy --only hosting   # web
+npm run sync                                         # sync to native projects
+# Then re-archive in Xcode (increment CFBundleVersion) and rebuild AAB (increment versionCode)
+```
+
+### Key Risks
+- **Firebase Hosting pollution** — update `firebase.json` ignores before any `firebase deploy`
+- **Icon double-rounding** — use flat-square source (remove `rx="96"` from SVG), iOS applies its own mask
+- **Android keystore loss** — losing it means you can never update the app; back up the `.jks` file and password
+- **App Store review** — first submission typically 2–5 business days; opt out of iPad (Device Families = iPhone only) to avoid iPad screenshot requirement

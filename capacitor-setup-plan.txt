@@ -1,0 +1,264 @@
+CAPACITOR iOS & ANDROID APP SETUP PLAN
+Bogeys and Bunkers — bogeysbunkers.golf
+=======================================
+
+CONTEXT
+-------
+The Bogeys and Bunkers webapp is a production PWA hosted on Firebase. The goal
+is to wrap it in Capacitor so it can be published on the Apple App Store and
+Google Play Store — zero code rewrite, same Firebase backend.
+
+The live Firebase webapp and home-screen PWA continue to work exactly as before.
+The native app builds are a separate layer on top.
+
+CURRENT STATE (verified 2026-04-07)
+------------------------------------
+- No package.json, capacitor.config.json, .gitignore, www/, ios/, android/,
+  resources/ exist yet
+- Service worker cache is at: bogeys-v9
+- Icons exist at: icons/icon-192.png, icons/icon-512.png, icons/icon.svg
+
+
+=============================================================================
+PHASE 1 — FOUNDATION SETUP
+(run these commands sequentially in the webapp root)
+=============================================================================
+
+1.1  Create .gitignore
+----------------------
+Contents:
+  node_modules/
+  www/
+  .firebase/
+  *.DS_Store
+  ios/App/App.xcworkspace/xcuserdata/
+  android/.gradle/
+  android/app/build/
+
+
+1.2  Initialize npm and install Capacitor
+-----------------------------------------
+  npm init -y
+  # Then edit package.json: name -> "bogeys-and-bunkers", add "private": true
+
+  npm install @capacitor/core @capacitor/ios @capacitor/android
+  npm install --save-dev @capacitor/cli @capacitor/assets
+  npm install @capacitor/haptics @capacitor/status-bar @capacitor/splash-screen
+
+
+1.3  Initialize Capacitor
+--------------------------
+  npx cap init "Bogeys and Bunkers" "com.bogeysbunkers.golf" --web-dir www
+
+Then edit capacitor.config.json to add plugin config:
+  {
+    "appId": "com.bogeysbunkers.golf",
+    "appName": "Bogeys and Bunkers",
+    "webDir": "www",
+    "plugins": {
+      "SplashScreen": {
+        "launchShowDuration": 2000,
+        "launchAutoHide": true,
+        "backgroundColor": "#4a7a52",
+        "showSpinner": false
+      },
+      "StatusBar": { "style": "LIGHT", "backgroundColor": "#4a7a52" }
+    }
+  }
+
+
+1.4  Create copy-to-www.sh
+---------------------------
+  #!/bin/bash
+  set -e
+  mkdir -p www/icons
+  cp index.html app.js styles.css manifest.json sw.js www/
+  cp icons/icon-192.png icons/icon-512.png icons/icon.svg www/icons/
+  # Inject Capacitor bridge into the native-only copy of index.html
+  sed -i '' 's|<script src="app.js"></script>|<script src="capacitor.js"></script>\n  <script src="app.js"></script>|' www/index.html
+  echo "✓ www/ populated"
+
+NOTE: The capacitor.js injection is done here (not in root index.html), so the
+live Firebase site is completely unaffected.
+
+
+1.5  Add npm scripts to package.json
+--------------------------------------
+  "scripts": {
+    "sync": "bash copy-to-www.sh && npx cap sync",
+    "open:ios": "npx cap open ios",
+    "open:android": "npx cap open android"
+  }
+
+
+1.6  Add native platforms
+--------------------------
+  npx cap add ios
+  npx cap add android
+
+
+1.7  Update firebase.json ignore rules
+---------------------------------------
+Add to hosting.ignore array (CRITICAL — do this before next firebase deploy):
+  "**/node_modules/**",
+  "www/**",
+  "ios/**",
+  "android/**",
+  "copy-to-www.sh",
+  "package.json",
+  "package-lock.json",
+  "capacitor.config.json"
+
+
+1.8  Run initial sync
+----------------------
+  npm run sync
+
+
+=============================================================================
+PHASE 2 — APP.JS CODE CHANGES
+=============================================================================
+
+2.1  Add haptics helper after Firebase init (top of app.js, after firebase setup)
+-----------------------------------------------------------------------------------
+  // Capacitor haptics — graceful no-op on web
+  const { Haptics, ImpactStyle } = window.Capacitor?.Plugins || {};
+  function triggerHaptic() {
+    try { if (Haptics) Haptics.impact({ style: ImpactStyle?.Light || 'LIGHT' }); }
+    catch (e) {}
+  }
+
+
+2.2  Call triggerHaptic() in score save
+----------------------------------------
+In bindScoreInputs() change handler (~line 855), after saveState():
+  triggerHaptic();
+
+
+2.3  Run sync again
+--------------------
+  npm run sync
+
+
+=============================================================================
+AGENT PARALLELIZATION — run all 4 agents in parallel after Phase 1-2 done
+=============================================================================
+
+  assets-agent       Generate resources/icon.png (1024x1024 flat square) and
+                     resources/splash.png (2732x2732 green bg), then run
+                     npx capacitor-assets generate for both platforms.
+                     Source: icons/icon.svg, color #4a7a52
+
+  ios-agent          Configure Xcode project: bundle ID com.bogeysbunkers.golf,
+                     iOS 16.0 minimum, iPhone only (Device Families = 1).
+                     Requires: ios/ directory exists (Phase 1 done)
+
+  android-agent      Configure Android Studio: verify build.gradle applicationId,
+                     minSdkVersion 22, targetSdkVersion 35. Build signed AAB.
+                     Keystore at ~/android-keystores/bogeys-bunkers-release.jks
+                     Requires: android/ directory exists (Phase 1 done)
+
+  app-store-copy-    Draft App Store Connect metadata (description, keywords,
+  agent              privacy policy). Create privacy.html in repo root.
+                     No code dependency — can start anytime.
+
+
+=============================================================================
+PHASE 3 — NATIVE ASSETS (resources/)
+=============================================================================
+
+Create resources/ directory with:
+  resources/icon.png   — 1024x1024, flat square
+                         Edit icons/icon.svg: change rx="96" to rx="0"
+                         Export at 1024x1024
+  resources/splash.png — 2732x2732, #4a7a52 background with icon centered
+
+Then generate icons for both platforms:
+  npx capacitor-assets generate --ios
+  npx capacitor-assets generate --android
+
+
+=============================================================================
+PHASE 4 — iOS BUILD (manual — requires Xcode installed)
+=============================================================================
+
+1. npm run open:ios  -> opens ios/App/App.xcworkspace in Xcode
+2. Bundle ID: com.bogeysbunkers.golf
+   iOS Deployment Target: 16.0
+   Targeted Device Families: 1 (iPhone only)
+3. Archive -> Distribute -> App Store Connect -> upload
+4. App Store Connect setup:
+   - Category: Sports
+   - Screenshots: 1290x2796px (6.7" iPhone)
+   - Privacy policy URL (point to golfleagueapp-74095.web.app/privacy)
+
+
+=============================================================================
+PHASE 5 — ANDROID BUILD (manual — requires Android Studio installed)
+=============================================================================
+
+1. Install Android Studio + SDK 35, set ANDROID_HOME environment variable
+2. npm run open:android
+3. Verify android/app/build.gradle:
+   - applicationId "com.bogeysbunkers.golf"
+   - minSdkVersion 22
+   - targetSdkVersion 35
+4. Build signed AAB
+   Keystore: ~/android-keystores/bogeys-bunkers-release.jks
+   *** BACK UP THIS FILE — losing it means you can never update the app ***
+5. Upload AAB to Google Play Console
+
+
+=============================================================================
+CRITICAL FILES
+=============================================================================
+
+Modified:
+  webapp/copy-to-www.sh       inject capacitor.js into www/index.html only
+  webapp/app.js               haptics helper + triggerHaptic() call
+  webapp/firebase.json        hosting ignore rules
+
+Created:
+  webapp/package.json
+  webapp/.gitignore
+  webapp/capacitor.config.json
+  webapp/copy-to-www.sh
+  webapp/resources/icon.png         (user creates manually)
+  webapp/resources/splash.png       (user creates manually)
+  webapp/privacy.html               (app-store-copy-agent)
+
+
+=============================================================================
+VERIFICATION
+=============================================================================
+
+After Phase 1-2:
+  1. www/ exists and contains all web files
+  2. ios/ and android/ directories exist
+  3. npx cap sync runs without errors
+  4. Open in Xcode/Android Studio, build to simulator — app loads Firebase UI
+
+After Phase 3:
+  - Icons appear correctly in iOS Simulator home screen
+  - Splash screen shows green background on launch
+
+
+=============================================================================
+KEY RISKS & REMINDERS
+=============================================================================
+
+  !! Update firebase.json ignores BEFORE next firebase deploy
+     or it will upload www/, ios/, android/ to Firebase Hosting
+
+  !! Bump sw.js CACHE version on every deploy after this change
+     Currently: bogeys-v9  ->  next deploy: bogeys-v10, then v11, etc.
+
+  !! Back up Android keystore (~/android-keystores/bogeys-bunkers-release.jks)
+     Losing it means you can NEVER update the Play Store app
+
+  !! iOS requires Apple Developer Program ($99/yr)
+  !! Android requires Google Play Console ($25 one-time)
+  !! App Store first review: typically 2-5 business days
+
+  The live Firebase webapp (golfleagueapp-74095.web.app) and the home-screen
+  PWA are completely unaffected by this setup — they continue to work as before.
