@@ -6,7 +6,14 @@
       "**/.*",
       "firestore.rules",
       "firestore.indexes.json",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      "www/**",
+      "ios/**",
+      "android/**",
+      "copy-to-www.sh",
+      "package.json",
+      "package-lock.json",
+      "capacitor.config.json"
     ],
     "headers": [
       {

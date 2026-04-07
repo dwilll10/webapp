@@ -1,0 +1,37 @@
+{
+  "name": "bogeys-and-bunkers",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A web app for managing a Monday Night Golf League — built with vanilla HTML, CSS, and JavaScript, backed by Firebase Firestore.",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "sync": "bash copy-to-www.sh && npx cap sync",
+    "open:ios": "npx cap open ios",
+    "open:android": "npx cap open android"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dwilll10/webapp.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/dwilll10/webapp/issues"
+  },
+  "homepage": "https://github.com/dwilll10/webapp#readme",
+  "dependencies": {
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/core": "^8.3.0",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.3.0",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.3.0"
+  }
+}

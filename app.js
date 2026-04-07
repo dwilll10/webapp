@@ -17,6 +17,13 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
 
+// Capacitor haptics — graceful no-op on web
+const { Haptics, ImpactStyle } = window.Capacitor?.Plugins || {};
+function triggerHaptic() {
+  try { if (Haptics) Haptics.impact({ style: ImpactStyle?.Light || 'LIGHT' }); }
+  catch (e) {}
+}
+
 function getDocRef(year) {
   return db.collection("league").doc(String(year));
 }
@@ -853,6 +860,7 @@ function bindScoreInputs() {
       const numericValue = event.target.value === "" ? null : Number(event.target.value);
       setScoreHole(weekId, matchId, playerId, Number(holeIndex), numericValue);
       saveState();
+      triggerHaptic();
       renderHandicaps();
       renderScores();
       renderNextMatchups();

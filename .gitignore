@@ -1,0 +1,7 @@
+node_modules/
+www/
+.firebase/
+*.DS_Store
+ios/App/App.xcworkspace/xcuserdata/
+android/.gradle/
+android/app/build/
