@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Bogeys and Bunkers</string>
+    <string name="title_activity_main">Bogeys and Bunkers</string>
+    <string name="package_name">com.bogeysbunkers.golf</string>
+    <string name="custom_url_scheme">com.bogeysbunkers.golf</string>
+</resources>
