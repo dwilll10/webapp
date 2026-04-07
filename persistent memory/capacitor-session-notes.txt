@@ -1,0 +1,158 @@
+CAPACITOR SETUP SESSION NOTES
+Session date: 2026-04-07
+==============================
+
+This file records what worked, what didn't, and why — so future sessions
+don't repeat the same trial and error.
+
+
+=============================================================================
+WHAT WORKED
+=============================================================================
+
+1. CAPACITOR INITIALIZATION
+   - `npx cap init` creates `capacitor.config.ts` (TypeScript), NOT
+     `capacitor.config.json`. Edit the .ts file directly — it works fine.
+   - Capacitor 6+ uses Swift Package Manager (SPM), so the iOS project
+     file is `ios/App/App.xcodeproj`, NOT `App.xcworkspace`.
+     `npm run open:ios` opens the right file. Open it with "Open Existing
+     Project" in Xcode, not "Create New Project" or "Clone Repo".
+
+2. ICON + SPLASH GENERATION
+   - `sharp` is already installed as part of `node_modules` (via
+     @capacitor/assets). No need for ImageMagick, rsvg-convert, or
+     Inkscape.
+   - Used a Node one-liner with sharp to generate resources/icon.png
+     (1024x1024) and resources/splash.png (2732x2732).
+   - Must change rx="96" to rx="0" in icon.svg before rendering — iOS
+     applies its own corner mask, and the double-rounded result looks bad.
+   - `npx capacitor-assets generate --ios` and `--android` then produce
+     all platform sizes from the two source files.
+
+3. CAPACITOR.JS INJECTION STRATEGY
+   - Do NOT add `<script src="capacitor.js">` to the root index.html.
+     That file is deployed to Firebase Hosting and browsers would get
+     a 404 for capacitor.js.
+   - Instead, inject it in copy-to-www.sh using sed, so only www/index.html
+     (the native build copy) gets the script tag:
+       sed -i '' 's|<script src="app.js"></script>|<script src="capacitor.js"></script>\n  <script src="app.js"></script>|' www/index.html
+   - The live Firebase webapp is completely unaffected.
+
+4. iOS STATUS BAR FIX
+   - The reliable fix is StatusBar.setOverlaysWebView({ overlay: false })
+     called in app.js right after the Capacitor plugins are destructured.
+   - Also set StatusBar.setBackgroundColor({ color: '#4a7a52' }) to match
+     the app theme.
+   - After every web change: npm run sync, then Cmd+R in Xcode to rebuild.
+
+5. ANDROID STATUS BAR FIX (API 36 / Android 16)
+   - The project targets compileSdkVersion=36, targetSdkVersion=36.
+   - At API 35+, Android enforces edge-to-edge regardless of theme flags.
+   - The fix that worked: ViewCompat.setOnApplyWindowInsetsListener in
+     MainActivity.java, measuring the actual status bar height and applying
+     it as padding to the root view.
+   - Full working MainActivity.java:
+
+     package com.bogeysbunkers.golf;
+
+     import android.os.Bundle;
+     import android.view.View;
+     import androidx.core.view.ViewCompat;
+     import androidx.core.view.WindowCompat;
+     import androidx.core.view.WindowInsetsCompat;
+     import com.getcapacitor.BridgeActivity;
+
+     public class MainActivity extends BridgeActivity {
+         @Override
+         protected void onCreate(Bundle savedInstanceState) {
+             super.onCreate(savedInstanceState);
+             WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+             View rootView = getWindow().getDecorView().getRootView();
+             ViewCompat.setOnApplyWindowInsetsListener(rootView, (v, insets) -> {
+                 int statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top;
+                 v.setPadding(0, statusBarHeight, 0, 0);
+                 return insets;
+             });
+         }
+     }
+
+6. FIREBASE.JSON IGNORES
+   - Must be updated before any `firebase deploy` after Capacitor setup.
+   - These entries prevent native artifacts from being uploaded to hosting:
+     "www/**", "ios/**", "android/**", "copy-to-www.sh",
+     "package.json", "package-lock.json", "capacitor.config.json"
+   - Already done — don't remove these.
+
+7. XCODE FIRST-TIME SETUP
+   - After opening App.xcodeproj, wait for "Resolving Packages" to finish
+     before trying to build.
+   - Select a simulator device from the toolbar dropdown, then hit Play (▶)
+     or Cmd+R.
+   - Deny the GitHub keychain login prompt — not needed for simulator testing.
+   - First build takes 2-3 minutes; subsequent builds are much faster.
+
+8. ANDROID STUDIO FIRST-TIME SETUP
+   - Open the `android/` folder directly (not a file inside it).
+   - Wait for Gradle sync to finish before running.
+   - Must create a virtual device (AVD) via Tools → Device Manager before
+     the emulator is available.
+   - Hit Run (▶) or Shift+F10 to deploy to the running emulator.
+
+
+=============================================================================
+WHAT DIDN'T WORK
+=============================================================================
+
+1. CSS env(safe-area-inset-top) ALONE — NOT SUFFICIENT FOR iOS
+   - Added viewport-fit=cover to the meta viewport tag and
+     padding-top: max(28px, env(safe-area-inset-top)) to .page-shell.
+   - The header still overlapped the status bar in the simulator.
+   - Root cause: Capacitor's StatusBar plugin overlays the WebView by
+     default; CSS safe area insets alone don't override that.
+   - Fix: StatusBar.setOverlaysWebView({ overlay: false }) in app.js.
+
+2. android:windowTranslucentStatus=false IN STYLES.XML — NOT SUFFICIENT
+   - Added android:statusBarColor and android:windowTranslucentStatus=false
+     to AppTheme.NoActionBar in styles.xml.
+   - Content still overlapped the camera cutout on Android emulator.
+   - Root cause: Android 15+ (API 35+) enforces edge-to-edge regardless
+     of windowTranslucentStatus flag.
+
+3. WindowCompat.setDecorFitsSystemWindows(getWindow(), true) — NOT SUFFICIENT
+   - Added to MainActivity.java onCreate.
+   - Content still overlapped on Android.
+   - Root cause: On API 36, this flag is ignored for edge-to-edge enforcement.
+   - Fix: Had to use ViewCompat.setOnApplyWindowInsetsListener with explicit
+     padding instead.
+
+4. npx cap open ios OPENING WRONG FILE
+   - The command reported success but Xcode didn't visibly open.
+   - Root cause: Capacitor 6+ generates App.xcodeproj, not App.xcworkspace.
+     Some versions of `cap open ios` look for the workspace first and fall
+     back silently.
+   - Fix: Open /Users/diedrichwillers/webapp/ios/App/App.xcodeproj directly
+     via File → Open in Xcode.
+
+5. ADDING capacitor.js SCRIPT TAG TO ROOT index.html
+   - Initial plan included adding <script src="capacitor.js"> to the root
+     index.html before the app.js tag.
+   - Problem: root index.html is deployed to Firebase Hosting; browsers
+     would get a 404 for capacitor.js (it only exists inside the native build).
+   - Fix: Inject the tag via sed in copy-to-www.sh, only into www/index.html.
+
+
+=============================================================================
+SYNC WORKFLOW REMINDER
+=============================================================================
+
+After every change to app.js, styles.css, or index.html:
+
+  npm run sync          <- copies files to www/, syncs to ios/ and android/
+
+Then rebuild in:
+  Xcode:          Cmd+R
+  Android Studio: Shift+F10
+
+Also bump sw.js CACHE version before firebase deploy:
+  Currently: bogeys-v9
+  Next:       bogeys-v10, then v11, etc.

@@ -251,145 +251,104 @@ match /league/{year} {
 
 ---
 
-## Planned Feature: Capacitor iOS & Android App
+## Capacitor iOS & Android App — IMPLEMENTED
 
-Wrap the existing webapp in Capacitor to publish on the Apple App Store and Google Play Store. Zero code rewrite — same Firebase backend, same HTML/CSS/JS. Web PWA, iOS app, and Android app all coexist.
+Capacitor wraps the webapp for native iOS and Android. Zero code rewrite — same Firebase backend, same HTML/CSS/JS. Web PWA, iOS app, and Android app all coexist.
 
-### Prerequisites
-- Apple Developer Program ($99/yr) — required for App Store
-- Google Play Console account ($25 one-time) — required for Play Store
-- Xcode (full install from Mac App Store, ~10GB) — for iOS builds
-- Android Studio + Android SDK 35 — for Android builds
+**Status:** Phases 1-3 complete. Tested in iOS Simulator and Android Emulator. App Store / Play Store submission pending developer accounts.
 
-### Critical: Do This First
-Update `firebase.json` ignore rules before running any `firebase deploy` after Capacitor is set up, or it will upload `www/`, `ios/`, `android/`, `node_modules/` to Firebase Hosting:
-```json
-"ignore": [
-  "firebase.json", "**/.*", "firestore.rules", "firestore.indexes.json",
-  "**/node_modules/**", "www/**", "ios/**", "android/**",
-  "copy-to-www.sh", "package.json", "package-lock.json", "capacitor.config.json"
-]
-```
+### What Was Built (2026-04-07)
 
-### Phase 1 — Foundation Setup (one agent, ~30 min)
+**New files:**
+- `package.json` — name `bogeys-and-bunkers`, private, Capacitor deps + sync/open scripts
+- `capacitor.config.ts` — appId `com.bogeysbunkers.golf`, SplashScreen + StatusBar plugins
+- `copy-to-www.sh` — copies web assets to `www/`, injects `capacitor.js` into `www/index.html` only (root `index.html` untouched so Firebase deploy is unaffected)
+- `.gitignore` — excludes `node_modules/`, `www/`, `ios/`, `android/`, `.firebase/`
+- `resources/icon.png` — 1024×1024 flat square (generated from `icons/icon.svg` with `rx="0"` via sharp)
+- `resources/splash.png` — 2732×2732, `#4a7a52` bg, icon centered (generated via sharp)
 
-```bash
-npm init -y
-# Edit package.json: name → "bogeys-and-bunkers", add "private": true
-npm install @capacitor/core @capacitor/ios @capacitor/android
-npm install --save-dev @capacitor/cli @capacitor/assets
-npm install @capacitor/haptics @capacitor/status-bar @capacitor/splash-screen
-npx cap init "Bogeys and Bunkers" "com.bogeysbunkers.golf" --web-dir www
-npx cap add ios
-npx cap add android
-```
+**Modified files:**
+- `firebase.json` — added hosting ignores for all Capacitor artifacts
+- `index.html` — added `viewport-fit=cover` to meta viewport tag
+- `styles.css` — added `padding-top: max(28px, env(safe-area-inset-top))` to `.page-shell`
+- `app.js` — Capacitor plugins block after Firebase init (see below)
+- `android/app/src/main/res/values/colors.xml` — green `#4a7a52` color resources
+- `android/app/src/main/res/values/styles.xml` — `statusBarColor` + `windowTranslucentStatus=false`
+- `android/app/src/main/java/com/bogeysbunkers/golf/MainActivity.java` — window insets fix for Android 15+ edge-to-edge
 
-Create `copy-to-www.sh`:
-```bash
-#!/bin/bash
-set -e
-mkdir -p www/icons
-cp index.html app.js styles.css manifest.json sw.js www/
-cp icons/icon-192.png icons/icon-512.png icons/icon.svg www/icons/
-echo "✓ www/ populated"
-```
+### Capacitor Block in app.js
 
-Add to `package.json` scripts:
-```json
-"sync": "bash copy-to-www.sh && npx cap sync",
-"open:ios": "npx cap open ios",
-"open:android": "npx cap open android"
-```
+Placed immediately after Firebase init (`const auth = firebase.auth()`):
 
-`capacitor.config.json` plugin config to add after `npx cap init`:
-```json
-{
-  "appId": "com.bogeysbunkers.golf",
-  "appName": "Bogeys and Bunkers",
-  "webDir": "www",
-  "plugins": {
-    "SplashScreen": { "launchShowDuration": 2000, "launchAutoHide": true, "backgroundColor": "#4a7a52", "showSpinner": false },
-    "StatusBar": { "style": "LIGHT", "backgroundColor": "#4a7a52" }
-  }
-}
-```
-
-Create `.gitignore`:
-```
-node_modules/
-www/
-.firebase/
-*.DS_Store
-ios/App/App.xcworkspace/xcuserdata/
-android/.gradle/
-android/app/build/
-```
-
-Run: `npm run sync`
-
-### Phase 2 — Web Code Changes (one agent, ~20 min)
-
-**`index.html`** — add before `<script src="app.js"></script>`:
-```html
-<script src="capacitor.js"></script>
-```
-
-**`app.js`** — add after Firebase init, before `let state`:
 ```javascript
-// Capacitor haptics — graceful no-op on web
-const { Haptics, ImpactStyle } = window.Capacitor?.Plugins || {};
+// Capacitor plugins — graceful no-ops on web
+const { Haptics, ImpactStyle, StatusBar } = window.Capacitor?.Plugins || {};
 function triggerHaptic() {
   try { if (Haptics) Haptics.impact({ style: ImpactStyle?.Light || 'LIGHT' }); }
   catch (e) {}
 }
+if (StatusBar) {
+  StatusBar.setOverlaysWebView({ overlay: false });
+  StatusBar.setBackgroundColor({ color: '#4a7a52' });
+}
 ```
 
-In `bindScoreInputs()` change handler (~line 855), add after `saveState()`:
-```javascript
-triggerHaptic();
+`triggerHaptic()` is called in `bindScoreInputs()` change handler after `saveState()`.
+
+### Icon Generation
+
+Icons were generated using `sharp` (already in `node_modules`) — no ImageMagick or external tools needed:
+
+```bash
+node -e "
+const sharp = require('sharp');
+const fs = require('fs');
+const svg = fs.readFileSync('icons/icon.svg', 'utf8').replace(/rx=\"96\"/g, 'rx=\"0\"');
+sharp(Buffer.from(svg)).resize(1024, 1024).png().toFile('resources/icon.png');
+sharp(Buffer.from(svg)).resize(900, 900).png().toBuffer().then(buf =>
+  sharp({ create: { width: 2732, height: 2732, channels: 4, background: '#4a7a52' } })
+    .composite([{ input: buf, gravity: 'center' }]).png().toFile('resources/splash.png')
+);
+"
+npx capacitor-assets generate --ios
+npx capacitor-assets generate --android
 ```
 
-Run: `npm run sync`
+### Status Bar Fixes
 
-### Phases 3, 4, 5 — Run in Parallel (after Phase 2)
+**iOS** — `StatusBar.setOverlaysWebView({ overlay: false })` in `app.js` resolved the overlap. CSS `env(safe-area-inset-top)` alone was not sufficient.
 
-**iOS Agent (Phase 3):**
-- `npx cap open ios` → opens `ios/App/App.xcworkspace`
-- Bundle ID: `com.bogeysbunkers.golf`, iOS 16.0 minimum, iPhone only (Targeted Device Families = `1`)
-- Generate icons: create `resources/icon.png` (1024×1024, **flat square** — edit `icon.svg`, change `rx="96"` to `rx="0"`), then `npx capacitor-assets generate --ios`
-- Splash: `resources/splash.png` (2732×2732, `#4a7a52` bg, icon centered), `npx capacitor-assets generate --ios`
-- Archive → Distribute → App Store Connect → upload
-- App Store Connect: Category Sports, add screenshots, privacy policy URL
+**Android** — Required two changes:
+1. `colors.xml` + `styles.xml` theme settings (not sufficient alone on API 36)
+2. `MainActivity.java` using `ViewCompat.setOnApplyWindowInsetsListener` to measure actual status bar height and apply as padding
 
-**Android Agent (Phase 4):**
-- Install Android Studio + SDK 35, set `ANDROID_HOME`
-- `npx cap open android`
-- Verify `android/app/build.gradle`: `applicationId "com.bogeysbunkers.golf"`, `minSdkVersion 22`, `targetSdkVersion 35`
-- Adaptive icons: `resources/icon-foreground.png` (artwork, transparent bg, 66% canvas), `resources/icon-background.png` (solid `#4a7a52`)
-- `npx capacitor-assets generate --android`
-- Build signed AAB → keystore at `~/android-keystores/bogeys-bunkers-release.jks` — **back up keystore securely**
-- Upload to Play Console
+### Opening Projects
 
-**Assets Agent (Phase 5):**
-- Flat icon source: edit `icon.svg` → `rx="0"` → export `resources/icon.png` at 1024×1024
-- Splash: 2732×2732 `#4a7a52` canvas, icon in center safe zone → `resources/splash.png`
-- App Store screenshots at 1290×2796px (6.7"): standings, score entry, handicaps, schedule
-- Play Store: phone screenshots + feature graphic (1024×500px)
-- Privacy policy: add `privacy.html` to repo root, deploy to `golfleagueapp-74095.web.app/privacy`
+```bash
+npm run open:ios      # opens ios/App/App.xcodeproj in Xcode (NOT .xcworkspace — Capacitor 6+ uses SPM)
+npm run open:android  # opens android/ folder in Android Studio
+```
 
 ### Ongoing Release Workflow
 
-After any web change:
+After any change to `app.js`, `styles.css`, or `index.html`:
+
 ```bash
 # 1. Edit root files as usual
-# 2. Bump sw.js CACHE version (bogeys-v10, v11, etc.)
-~/.npm-global/bin/firebase deploy --only hosting   # web
+# 2. Bump sw.js CACHE version (currently bogeys-v9 → v10, v11, etc.)
+~/.npm-global/bin/firebase deploy --only hosting   # update live web/PWA
 npm run sync                                         # sync to native projects
-# Then re-archive in Xcode (increment CFBundleVersion) and rebuild AAB (increment versionCode)
+# iOS: Cmd+R in Xcode to rebuild simulator / Archive for App Store
+# Android: Shift+F10 in Android Studio to rebuild / build signed AAB for Play Store
 ```
 
+### Next Steps for App Store / Play Store
+
+- **iOS:** Requires Apple Developer account ($99/yr) → Archive → Distribute in Xcode → App Store Connect (Category: Sports, screenshots at 1290×2796px, privacy policy URL)
+- **Android:** Requires Google Play Console ($25 one-time) → build signed AAB → keystore at `~/android-keystores/bogeys-bunkers-release.jks` → **back up keystore or you can never update the app**
+
 ### Key Risks
-- **Firebase Hosting pollution** — update `firebase.json` ignores before any `firebase deploy`
-- **Icon double-rounding** — use flat-square source (remove `rx="96"` from SVG), iOS applies its own mask
-- **Android keystore loss** — losing it means you can never update the app; back up the `.jks` file and password
-- **App Store review** — first submission typically 2–5 business days; opt out of iPad (Device Families = iPhone only) to avoid iPad screenshot requirement
+- **Firebase Hosting pollution** — `firebase.json` ignores are set; always verify before `firebase deploy`
+- **Icon double-rounding** — `resources/icon.png` must be flat square (`rx="0"`); iOS applies its own mask shape
+- **Android keystore loss** — losing the `.jks` file means you can never update the Play Store app
+- **App Store review** — first submission typically 2–5 business days
