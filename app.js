@@ -69,6 +69,8 @@ const yearSelect = document.querySelector("#yearSelect");
 const heroEyebrow = document.querySelector("#heroEyebrow");
 const standingsMeta = document.querySelector("#standingsMeta");
 const standingsTableBody = document.querySelector("#standingsTableBody");
+const standingsTable = document.querySelector("#standingsTable");
+const championBanner = document.querySelector("#championBanner");
 const handicapTableBody = document.querySelector("#handicapTableBody");
 const scoreWeekSelect = document.querySelector("#scoreWeekSelect");
 const scoresWeekLabel = document.querySelector("#scoresWeekLabel");
@@ -549,61 +551,270 @@ function calculateTeamNetPoints(week, match) {
   return { ...pts, netA: net[0], netB: net[1] };
 }
 
-function computeTeamPoints(teamId) {
+// Returns { individual, teamNet, total } points earned by `teamId` in this match.
+// Returns zeros if `teamId` isn't in the match or teams are missing.
+function computeMatchPointsForTeam(week, match, teamId) {
+  const isA = match.teamAId === teamId;
+  const isB = match.teamBId === teamId;
+  if (!isA && !isB) return { individual: 0, teamNet: 0, total: 0 };
+
+  const teamA = getTeam(match.teamAId);
+  const teamB = getTeam(match.teamBId);
+  if (!teamA || !teamB) return { individual: 0, teamNet: 0, total: 0 };
+
+  const holeHandicaps = getNineHandicaps(week.nines);
+  const sortedA = getSortedPlayers(week.id, match.id, teamA);
+  const sortedB = getSortedPlayers(week.id, match.id, teamB);
+
+  let individual = 0;
+  for (let i = 0; i < 2; i++) {
+    const { pointsA, pointsB } = calculateMatchPoints(
+      getScoreEntry(week.id, match.id, sortedA[i].id).holes,
+      getScoreEntry(week.id, match.id, sortedB[i].id).holes,
+      getEffectiveHandicap(week.id, match.id, sortedA[i].id),
+      getEffectiveHandicap(week.id, match.id, sortedB[i].id),
+      holeHandicaps,
+    );
+    const pts = isA ? pointsA : pointsB;
+    individual += pts.filter((p) => p !== null).reduce((s, p) => s + p, 0);
+  }
+
+  const teamPts = calculateTeamNetPoints(week, match);
+  const teamNet = teamPts ? (isA ? teamPts.teamA : teamPts.teamB) : 0;
+
+  return { individual, teamNet, total: individual + teamNet };
+}
+
+// Splits the schedule into two equal halves followed by a championship week.
+// For 19-week / 10-team default: first = idx 0..8, second = idx 9..17, championship = idx 18.
+// Returns null if the schedule is too short to have a meaningful structure.
+function getSeasonStructure() {
+  const len = (state.schedule || []).length;
+  if (len < 3) return null;
+  const championshipIdx = len - 1;
+  const halfSize = Math.floor(championshipIdx / 2);
+  if (halfSize < 1) return null;
+  return {
+    firstHalf: { start: 0, end: halfSize - 1 },
+    secondHalf: { start: halfSize, end: championshipIdx - 1 },
+    championshipIdx,
+  };
+}
+
+// Determines which half drives the standings sort right now, based on today's
+// date relative to the schedule's week dates.
+function getActiveHalf() {
+  const s = getSeasonStructure();
+  if (!s) return "first";
+  const sched = state.schedule || [];
+  const today = new Date().toISOString().split("T")[0];
+  const champWeek = sched[s.championshipIdx];
+  const secondStart = sched[s.secondHalf.start];
+  if (champWeek?.date && today >= champWeek.date) return "championship";
+  if (secondStart?.date && today >= secondStart.date) return "second";
+  return "first";
+}
+
+// Sums team-net points (the 2-pt awards) earned by a team within a week range.
+// Used as a final fallback when both raw points and head-to-head are tied.
+function computeTeamNetTotal(teamId, startIdx, endIdx) {
+  const schedule = state.schedule || [];
+  const last = Math.min(endIdx, schedule.length - 1);
   let total = 0;
-  for (const week of state.schedule || []) {
-    const holeHandicaps = getNineHandicaps(week.nines);
+  for (let i = startIdx; i <= last; i++) {
+    const week = schedule[i];
+    if (!week) continue;
     for (const match of week.matches) {
-      const isA = match.teamAId === teamId;
-      const isB = match.teamBId === teamId;
-      if (!isA && !isB) continue;
+      total += computeMatchPointsForTeam(week, match, teamId).teamNet;
+    }
+  }
+  return total;
+}
 
-      const teamA = getTeam(match.teamAId);
-      const teamB = getTeam(match.teamBId);
-      if (!teamA || !teamB) continue;
+// Returns the team id that won the given half, applying tiebreakers in order:
+// 1) total points within the half, 2) head-to-head points among tied teams,
+// 3) team-net points within the half, 4) name asc as a stable last resort.
+// Returns null if the season structure isn't ready or there are no teams.
+function getHalfWinner(half) {
+  const s = getSeasonStructure();
+  if (!s || !state.teams.length) return null;
+  const range = half === "first" ? s.firstHalf : s.secondHalf;
 
-      const sortedA = getSortedPlayers(week.id, match.id, teamA);
-      const sortedB = getSortedPlayers(week.id, match.id, teamB);
+  const scored = state.teams.map((t) => ({
+    id: t.id,
+    pts: computeTeamPoints(t.id, { startIdx: range.start, endIdx: range.end }),
+  }));
+  const top = Math.max(...scored.map((t) => t.pts));
+  let tied = scored.filter((t) => t.pts === top).map((t) => t.id);
+  if (tied.length === 1) return tied[0];
 
-      // Individual hole points
-      for (let i = 0; i < 2; i++) {
-        const { pointsA, pointsB } = calculateMatchPoints(
-          getScoreEntry(week.id, match.id, sortedA[i].id).holes,
-          getScoreEntry(week.id, match.id, sortedB[i].id).holes,
-          getEffectiveHandicap(week.id, match.id, sortedA[i].id),
-          getEffectiveHandicap(week.id, match.id, sortedB[i].id),
-          holeHandicaps,
-        );
-        const pts = isA ? pointsA : pointsB;
-        total += pts.filter((p) => p !== null).reduce((s, p) => s + p, 0);
-      }
+  // Head-to-head: only matches where both teams in the match are tied
+  const h2h = Object.fromEntries(tied.map((id) => [id, 0]));
+  for (let i = range.start; i <= range.end; i++) {
+    const week = state.schedule[i];
+    if (!week) continue;
+    for (const match of week.matches) {
+      if (!tied.includes(match.teamAId) || !tied.includes(match.teamBId)) continue;
+      h2h[match.teamAId] += computeMatchPointsForTeam(week, match, match.teamAId).total;
+      h2h[match.teamBId] += computeMatchPointsForTeam(week, match, match.teamBId).total;
+    }
+  }
+  const topH2h = Math.max(...tied.map((id) => h2h[id]));
+  tied = tied.filter((id) => h2h[id] === topH2h);
+  if (tied.length === 1) return tied[0];
 
-      // Team net points
-      const teamPts = calculateTeamNetPoints(week, match);
-      if (teamPts) total += isA ? teamPts.teamA : teamPts.teamB;
+  // Team-net total within the half
+  const netTotals = Object.fromEntries(
+    tied.map((id) => [id, computeTeamNetTotal(id, range.start, range.end)])
+  );
+  const topNet = Math.max(...tied.map((id) => netTotals[id]));
+  tied = tied.filter((id) => netTotals[id] === topNet);
+  if (tied.length === 1) return tied[0];
+
+  // Stable fallback: alphabetical
+  return [...tied]
+    .sort((a, b) => (getTeam(a)?.name || "").localeCompare(getTeam(b)?.name || ""))[0];
+}
+
+// Returns the championship match {id, teamAId, teamBId} or null if both
+// half winners aren't yet determined. The match is computed on the fly --
+// it is never persisted into state.schedule so half-winner changes don't
+// leave stale persisted teams in week 19.
+function getChampionshipMatch() {
+  const s = getSeasonStructure();
+  if (!s) return null;
+  const firstW = getHalfWinner("first");
+  const secondW = getHalfWinner("second");
+  if (!firstW || !secondW) return null;
+
+  if (firstW !== secondW) {
+    return { id: "championship-match", teamAId: firstW, teamBId: secondW };
+  }
+
+  // Same team won both halves: opponent is the regular-season points leader
+  // (weeks 1 .. championshipIdx-1) excluding the double-winner.
+  const others = state.teams
+    .filter((t) => t.id !== firstW)
+    .map((t) => ({
+      id: t.id,
+      pts: computeTeamPoints(t.id, { startIdx: 0, endIdx: s.championshipIdx - 1 }),
+    }))
+    .sort((a, b) => b.pts - a.pts || (getTeam(a.id)?.name || "").localeCompare(getTeam(b.id)?.name || ""));
+  if (!others.length) return null;
+  return { id: "championship-match", teamAId: firstW, teamBId: others[0].id };
+}
+
+// Returns the matches to render for a week, injecting the dynamic
+// championship match for week 19 (the structure's championshipIdx).
+// For all other weeks, returns the persisted week.matches array.
+function getEffectiveMatches(week) {
+  if (!week) return [];
+  const s = getSeasonStructure();
+  if (s && state.schedule[s.championshipIdx]?.id === week.id) {
+    const champ = getChampionshipMatch();
+    return champ ? [champ] : [];
+  }
+  return week.matches || [];
+}
+
+// Returns the championship winner's team id, or null/{tie:true} states.
+//   null               — no match yet, or no scores entered yet
+//   { tie: true, ... } — match exists and is fully scored but tied
+//   <teamId>           — that team won the championship
+function getChampion() {
+  const s = getSeasonStructure();
+  if (!s) return null;
+  const match = getChampionshipMatch();
+  if (!match) return null;
+  const champWeek = state.schedule[s.championshipIdx];
+  if (!champWeek) return null;
+  const aPts = computeMatchPointsForTeam(champWeek, match, match.teamAId).total;
+  const bPts = computeMatchPointsForTeam(champWeek, match, match.teamBId).total;
+  if (aPts === 0 && bPts === 0) return null;
+  if (aPts === bPts) return { tie: true, ...match };
+  return aPts > bPts ? match.teamAId : match.teamBId;
+}
+
+function computeTeamPoints(teamId, opts = {}) {
+  const { startIdx = 0, endIdx = Infinity } = opts;
+  const schedule = state.schedule || [];
+  const last = Math.min(endIdx, schedule.length - 1);
+  let total = 0;
+  for (let i = startIdx; i <= last; i++) {
+    const week = schedule[i];
+    if (!week) continue;
+    for (const match of week.matches) {
+      total += computeMatchPointsForTeam(week, match, teamId).total;
     }
   }
   return total;
 }
 
 function renderStandings() {
-  const standings = [...state.teams]
-    .map((team) => ({ ...team, computed: computeTeamPoints(team.id) }))
-    .sort((a, b) => b.computed - a.computed || a.name.localeCompare(b.name));
-  standingsMeta.textContent = `${standings.length} teams`;
-  standingsTableBody.innerHTML = standings.map((team, index) => {
-    const playerNames = team.players.map((p) => escapeHtml(p.name)).join(" and ");
+  const fmt = (n) => (n % 1 === 0 ? `${n}` : n.toFixed(1));
+  const structure = getSeasonStructure();
+  const activeHalf = getActiveHalf();
+  // Map UI column key -> data field; "championship" sorts by Total
+  const sortKey = activeHalf === "first" ? "firstHalf"
+                : activeHalf === "second" ? "secondHalf"
+                : "total";
+
+  const rows = state.teams.map((team) => {
+    const firstHalf = structure
+      ? computeTeamPoints(team.id, { startIdx: structure.firstHalf.start, endIdx: structure.firstHalf.end })
+      : 0;
+    const secondHalf = structure
+      ? computeTeamPoints(team.id, { startIdx: structure.secondHalf.start, endIdx: structure.secondHalf.end })
+      : 0;
+    return { team, firstHalf, secondHalf, total: firstHalf + secondHalf };
+  }).sort((a, b) => b[sortKey] - a[sortKey] || a.team.name.localeCompare(b.team.name));
+
+  standingsMeta.textContent = `${rows.length} teams`;
+
+  // Mark the active sort column on the header (always desc -> ▼ indicator)
+  if (standingsTable) {
+    standingsTable.querySelectorAll("thead th[data-col]").forEach((th) => {
+      const isActive = th.dataset.col === sortKey;
+      th.classList.toggle("sort-active", isActive);
+      if (isActive) th.dataset.dir = "desc";
+      else delete th.dataset.dir;
+    });
+  }
+
+  standingsTableBody.innerHTML = rows.map((row, index) => {
+    const playerNames = row.team.players.map((p) => escapeHtml(p.name)).join(" and ");
+    const cellCls = (col) => col === sortKey ? " sort-active" : "";
     return `
       <tr>
         <td class="rank-cell">${index + 1}</td>
         <td class="team-cell">
-          ${escapeHtml(team.name)}
+          ${escapeHtml(row.team.name)}
           <span class="standings-players">${playerNames}</span>
         </td>
-        <td><span class="points-pill">${team.computed % 1 === 0 ? team.computed : team.computed.toFixed(1)}</span></td>
+        <td class="points-col${cellCls("firstHalf")}"><span class="points-pill">${fmt(row.firstHalf)}</span></td>
+        <td class="points-col${cellCls("secondHalf")}"><span class="points-pill">${fmt(row.secondHalf)}</span></td>
+        <td class="points-col${cellCls("total")}"><span class="points-pill">${fmt(row.total)}</span></td>
       </tr>
     `;
   }).join("");
+
+  // Champion banner
+  if (championBanner) {
+    const champ = getChampion();
+    if (!champ) {
+      championBanner.hidden = true;
+      championBanner.textContent = "";
+    } else if (champ && champ.tie) {
+      const a = getTeam(champ.teamAId)?.name || "?";
+      const b = getTeam(champ.teamBId)?.name || "?";
+      championBanner.hidden = false;
+      championBanner.textContent = `Championship tied: ${a} vs ${b}`;
+    } else {
+      const name = getTeam(champ)?.name || "?";
+      championBanner.hidden = false;
+      championBanner.textContent = `Season Champion: ${name}`;
+    }
+  }
 }
 
 function renderHandicaps() {
@@ -641,10 +852,13 @@ function renderHandicaps() {
 }
 
 function renderWeekOptions() {
+  const s = getSeasonStructure();
+  const champId = s ? state.schedule[s.championshipIdx]?.id : null;
   scoreWeekSelect.innerHTML = state.schedule
-    ? state.schedule.map((week) => `
-        <option value="${week.id}">${escapeHtml(week.label)} - ${formatDate(week.date)} (${week.nines === "back" ? "Back 9" : "Front 9"})</option>
-      `).join("")
+    ? state.schedule.map((week) => {
+        const suffix = week.id === champId ? " · Championship" : "";
+        return `<option value="${week.id}">${escapeHtml(week.label)}${suffix} - ${formatDate(week.date)} (${week.nines === "back" ? "Back 9" : "Front 9"})</option>`;
+      }).join("")
     : "";
 
   if (state.selectedWeekId) {
@@ -663,12 +877,18 @@ function renderScores() {
 
   scoresWeekLabel.textContent = `${week.label} | ${formatDate(week.date)} | ${week.nines === "back" ? "Back 9" : "Front 9"}`;
 
-  if (!week.matches.length) {
-    scoresContainer.innerHTML = `<div class="empty-state">No matches scheduled for this week.</div>`;
+  const matches = getEffectiveMatches(week);
+  const s = getSeasonStructure();
+  const isChampionshipWeek = s && state.schedule[s.championshipIdx]?.id === week.id;
+
+  if (!matches.length) {
+    scoresContainer.innerHTML = isChampionshipWeek
+      ? `<div class="empty-state">Championship match will appear here once both half winners are decided.</div>`
+      : `<div class="empty-state">No matches scheduled for this week.</div>`;
     return;
   }
 
-  scoresContainer.innerHTML = week.matches.map((match) => renderScoreMatchCard(week, match)).join("");
+  scoresContainer.innerHTML = matches.map((match) => renderScoreMatchCard(week, match)).join("");
   bindScoreInputs();
 }
 
@@ -815,7 +1035,7 @@ function renderPlayerScoreCard(weekId, matchId, teamName, player, nines, points,
           const holeClass = pt === 1 ? " hole-win" : pt === 0.5 ? " hole-tie" : "";
           return `
             <label class="hole-field${holeClass}">
-              <span class="hole-label-row">${index + 1}${hasStroke ? `<span class="stroke-dot">1</span>` : ""}</span>
+              <span class="hole-label-row">${nines === "back" ? index + 10 : index + 1}${hasStroke ? `<span class="stroke-dot">1</span>` : ""}</span>
               <span class="hole-par">P${pars[index]} · h${holeHandicaps[index]}</span>
               <input type="number" min="1" max="15" value="${scoreEntry.holes[index] ?? ""}"
                 data-week-id="${weekId}" data-match-id="${matchId}"
@@ -882,26 +1102,38 @@ function renderSchedule() {
       : "";
   }
 
-  scheduleContainer.innerHTML = state.schedule.map((week) => `
+  const structure = getSeasonStructure();
+  scheduleContainer.innerHTML = state.schedule.map((week) => {
+    const isChampionshipWeek = structure && state.schedule[structure.championshipIdx]?.id === week.id;
+    const matches = getEffectiveMatches(week);
+    const emptyMessage = isChampionshipWeek
+      ? `Championship match — pairings finalize once both half winners are decided.`
+      : `Open league night. Use this date for a makeup match, position round, or bye week.`;
+    const headerSuffix = isChampionshipWeek
+      ? `Championship`
+      : `${matches.length} matches`;
+
+    return `
     <article class="week-card">
       <div class="week-card-header">
         <div>
-          <p class="section-kicker">${escapeHtml(week.label)}</p>
+          <p class="section-kicker">${escapeHtml(week.label)}${isChampionshipWeek ? " · Championship" : ""}</p>
           <div class="week-label">${formatDate(week.date)}</div>
         </div>
-        <div class="week-date">${week.nines === "back" ? "Back 9" : "Front 9"} · ${week.matches.length} matches</div>
+        <div class="week-date">${week.nines === "back" ? "Back 9" : "Front 9"} · ${headerSuffix}</div>
       </div>
-      ${week.matches.length ? `
+      ${matches.length ? `
         <div class="stack-md">
-          ${week.matches.map((match) => {
+          ${matches.map((match) => {
             const teamA = getTeam(match.teamAId);
             const teamB = getTeam(match.teamBId);
             return `<div class="team-matchup"><div class="team-name">${escapeHtml(teamA?.name || "TBD")} vs ${escapeHtml(teamB?.name || "TBD")}</div></div>`;
           }).join("")}
         </div>
-      ` : `<div class="empty-state">Open league night. Use this date for a makeup match, position round, or bye week.</div>`}
+      ` : `<div class="empty-state">${emptyMessage}</div>`}
     </article>
-  `).join("");
+  `;
+  }).join("");
 }
 
 function renderNextMatchups() {
@@ -913,8 +1145,12 @@ function renderNextMatchups() {
     return;
   }
 
-  matchupMeta.textContent = `${nextWeek.label} | ${formatDate(nextWeek.date)} | ${nextWeek.nines === "back" ? "Back 9" : "Front 9"}`;
-  nextMatchupsContainer.innerHTML = nextWeek.matches.map((match) => {
+  const s = getSeasonStructure();
+  const isChampionshipWeek = s && state.schedule[s.championshipIdx]?.id === nextWeek.id;
+  const labelSuffix = isChampionshipWeek ? " · Championship" : "";
+  matchupMeta.textContent = `${nextWeek.label}${labelSuffix} | ${formatDate(nextWeek.date)} | ${nextWeek.nines === "back" ? "Back 9" : "Front 9"}`;
+
+  nextMatchupsContainer.innerHTML = getEffectiveMatches(nextWeek).map((match) => {
     const teamA = getTeam(match.teamAId);
     const teamB = getTeam(match.teamBId);
 
@@ -1329,10 +1565,21 @@ function getSelectedWeek() {
 
 function getNextMatchupWeek() {
   const today = new Date();
-  const sorted = [...(state.schedule || [])].sort((left, right) => left.date.localeCompare(right.date));
-  return sorted.find((week) => week.matches.length && new Date(`${week.date}T00:00:00`) >= today)
-    || sorted.find((week) => week.matches.length)
-    || null;
+  today.setHours(0, 0, 0, 0);
+  const sorted = [...(state.schedule || [])]
+    .filter((week) => getEffectiveMatches(week).length)
+    .sort((left, right) => left.date.localeCompare(right.date));
+  if (!sorted.length) return null;
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const nextWeek = sorted.find((week) => new Date(`${week.date}T00:00:00`) >= today);
+  if (!nextWeek) return sorted[sorted.length - 1];
+
+  const daysAway = (new Date(`${nextWeek.date}T00:00:00`) - today) / dayMs;
+  if (daysAway <= 6) return nextWeek;
+
+  const previousWeek = [...sorted].reverse().find((week) => new Date(`${week.date}T00:00:00`) < today);
+  return previousWeek || nextWeek;
 }
 
 function getPlayerRows() {
@@ -1354,6 +1601,7 @@ function calculateHandicapFromData(playerId, data) {
     const ninePars = week.nines === "back" ? cd.pars.slice(9) : cd.pars.slice(0, 9);
     const par = ninePars.reduce((s, p) => s + p, 0);
     (week.matches || []).forEach((match) => {
+      if ((data.subAssignments || {})[week.id]?.[match.id]?.[playerId]) return;
       const holes = ((data.scores || {})[week.id]?.[match.id]?.[playerId]?.holes || [])
         .slice(0, 9)
         .map((v) => (Number.isFinite(v) ? v : null));
@@ -1433,6 +1681,7 @@ function getPlayerRounds(playerId) {
     const par = pars.reduce((s, p) => s + p, 0);
 
     week.matches.forEach((match) => {
+      if (getSubAssignment(week.id, match.id, playerId)) return;
       const entry = getScoreEntry(week.id, match.id, playerId);
       const total = calculateRoundTotal(entry.holes);
 
@@ -1772,7 +2021,9 @@ function createStandardSchedule(teams, dates) {
     label: `Week ${index + 1}`,
     date,
     nines: index % 2 === 0 ? "front" : "back",
-    matches: (rounds[index % rounds.length] || []).map((pairing, pairingIndex) => ({
+    // Round-robin fills the first rounds.length weeks; remaining weeks (e.g. the
+    // championship) start empty so getEffectiveMatches can inject dynamic pairings.
+    matches: (rounds[index] || []).map((pairing, pairingIndex) => ({
       id: `match-${index + 1}-${pairingIndex + 1}`,
       teamAId: pairing[0],
       teamBId: pairing[1],

@@ -129,14 +129,18 @@
           <p class="section-meta" id="standingsMeta"></p>
         </div>
 
+        <div id="championBanner" class="champion-banner" hidden></div>
+
         <div class="panel">
           <div class="table-wrap">
-            <table>
+            <table id="standingsTable">
               <thead>
                 <tr>
                   <th>Place</th>
                   <th>Team</th>
-                  <th>Points</th>
+                  <th data-col="firstHalf">1st Half</th>
+                  <th data-col="secondHalf">2nd Half</th>
+                  <th data-col="total">Total</th>
                 </tr>
               </thead>
               <tbody id="standingsTableBody"></tbody>

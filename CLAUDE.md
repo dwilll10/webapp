@@ -63,7 +63,7 @@ Global substitute roster is stored separately at `league/subs` as `{ subPlayers:
 
 **Routing:** Hash changes call `renderPageFromHash()` which toggles `is-active` on `<section data-page="...">` elements. When navigating to `#scores`, it also calls `getDefaultScoresWeekId()` to set `state.selectedWeekId` before rendering — defaults to the most recently completed week (last week whose date ≤ today), or week 1 if the season hasn't started yet.
 
-**Scheduling:** `buildDoubleRoundRobin()` generates an 18-round double round-robin. `lastMondayOfApril(year)` computes the default Week 1 date (replaces old hardcoded `seasonDates()`). Admin schedule editor has "Number of Weeks" and "Week 1 Date" inputs; `generateScheduleBtn` regenerates from those. Date cascade: changing a week's date in admin shifts all subsequent weeks by the same delta. New/regenerated schedules default to alternating Front 9 / Back 9 starting with Front 9 (odd-indexed weeks = front, even-indexed = back).
+**Scheduling:** `buildDoubleRoundRobin()` generates an 18-round double round-robin. `createStandardSchedule(teams, dates)` fills the first `rounds.length` weeks with those pairings; remaining weeks (e.g. the 19th / championship) are left with `matches: []` so `getEffectiveMatches()` can inject dynamic pairings at render time. The default season is **19 weeks: two 9-week round-robins + a championship match in week 19**. `lastMondayOfApril(year)` computes the default Week 1 date. Admin schedule editor has "Number of Weeks" and "Week 1 Date" inputs; `generateScheduleBtn` regenerates from those. Date cascade: changing a week's date in admin shifts all subsequent weeks by the same delta. New/regenerated schedules default to alternating Front 9 / Back 9 starting with Front 9 (odd-indexed weeks = front, even-indexed = back).
 
 **Handicap (regular players):** `calculateHandicap(playerId, beforeWeekId)` — treats `startingHandicap` as two phantom prior rounds (prepends `[sh, sh]` before actual over-par values), then slices to the last 3, averages, and rounds. This means the starting handicap decays naturally as real rounds accumulate and drops out after 3 rounds. Accepts optional `beforeWeekId` to freeze handicaps at pre-week values: only rounds with a `weekDate` strictly before the given week's date are included. Week 1 always returns `startingHandicap` (no prior rounds). The active/current week on the scores page matches the handicaps page exactly. Par is per-nine from `getNinePars(nines)`.
 
@@ -78,8 +78,24 @@ Global substitute roster is stored separately at `league/subs` as `{ subPlayers:
 - **Individual:** 1pt per hole (lower net score wins), 0.5 each on ties. Net score = actual score minus stroke(s) on hardest holes by SI.
 - **Stroke allocation:** Handicap difference between paired players; strokes go to the higher-handicap player on the hardest holes (lowest SI number first). Max 9 strokes.
 - **Team net:** Sum of both players' actual scores minus sum of their handicaps. Lower net = 2pts, tie = 1pt each.
-- **Total per team:** sum of individual hole points (both players) + team net points, across all weeks.
-- **Standings** use `computeTeamPoints(teamId)` — live-calculated, ignores the `team.points` field.
+- **Per-match engine:** `computeMatchPointsForTeam(week, match, teamId)` returns `{ individual, teamNet, total }` for one team in one match — single source of truth used by the standings, head-to-head tiebreakers, and the championship resolver.
+- **Per-team aggregator:** `computeTeamPoints(teamId, { startIdx, endIdx })` sums match totals across an inclusive week-index range. All callers pass an explicit range (first half, second half, or full regular season); there is no implicit "full season" caller anymore.
+- **Standings** are live-calculated from these helpers — the `team.points` field is ignored.
+
+## Standings & Championship (two-half + final)
+
+The 19-week season is split into two 9-week halves followed by a championship match. The split is **derived**, not stored — `getSeasonStructure()` returns `{ firstHalf, secondHalf, championshipIdx }` based on `state.schedule.length` (championship = last week, halves = floor((len-1)/2) weeks each). Returns `null` when the schedule is too short to be meaningful.
+
+- **`renderStandings()`** computes three numbers per team: `firstHalf`, `secondHalf`, `total = firstHalf + secondHalf` (week 19 is **excluded** from total). The active sort column is determined by `getActiveHalf()`:
+  - today < second-half start date → sort by **1st Half**
+  - today ≥ second-half start, < championship date → sort by **2nd Half**
+  - today ≥ championship date → sort by **Total**
+- The active column gets `class="sort-active" data-dir="desc"` on the `<th>` and the matching `<td>` in each row, sharing the existing CSS used by the Stats page.
+- **Half winner** (`getHalfWinner('first'|'second')`) tiebreakers in order: (1) total points within the half, (2) **head-to-head** points among the tied teams within that half, (3) team-net total within the half (`computeTeamNetTotal`), (4) team name asc as a stable last resort.
+- **Championship match** (`getChampionshipMatch()`) is computed on the fly and **never persisted**. Returns `{ id: 'championship-match', teamAId: firstHalfWinner, teamBId: secondHalfWinner }`. If the same team won both halves, the opponent is the regular-season points leader (weeks 1 .. championshipIdx-1) excluding the double-winner.
+- **`getEffectiveMatches(week)`** is the render-side bridge: returns `week.matches` for normal weeks, and `[getChampionshipMatch()]` (or `[]`) for the championship week. Used by `renderScores`, `renderSchedule`, `renderNextMatchups`, `getNextMatchupWeek`, and `renderWeekOptions` so the championship pairing flows through every UI surface without needing schedule writes.
+- **Stable match id `'championship-match'`** keeps `state.scores['week-19']['championship-match'][playerId].holes` consistent across half-winner changes. If admins later re-edit a week-9 score and the half winner changes, scores already entered for the prior teams remain in storage but stop displaying (no auto-cleanup).
+- **`getChampion()`** uses `computeMatchPointsForTeam` on the championship match to return the winner's team id, `null` when no scores entered, or `{ tie: true, ... }` if the match is fully scored but tied. `renderStandings()` uses this to render `#championBanner`.
 
 ## Course Data
 
@@ -166,7 +182,7 @@ The app is shipped as a **PWA**. Users add it to their iPhone home screen from S
 ### ⚠️ Cache version — bump on every deploy
 Every time `app.js` or `styles.css` changes, increment the cache version in `sw.js`:
 ```js
-const CACHE = 'bogeys-v9'; // bump to v10, v11, etc. on each deploy
+const CACHE = 'bogeys-v12'; // bump to v13, v14, etc. on each deploy
 ```
 Without this, users (including the home screen app) will be served stale files from the old cache.
 
@@ -455,7 +471,7 @@ After any change to `app.js`, `styles.css`, or `index.html`:
 
 ```bash
 # 1. Edit root files as usual
-# 2. Bump sw.js CACHE version (currently bogeys-v9 → v10, v11, etc.)
+# 2. Bump sw.js CACHE version (currently bogeys-v12 → v13, v14, etc.)
 ~/.npm-global/bin/firebase deploy --only hosting   # update live web/PWA
 npm run sync                                         # sync to native projects
 # iOS: Cmd+R in Xcode to rebuild simulator / Archive for App Store

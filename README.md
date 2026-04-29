@@ -8,15 +8,17 @@ A web app for managing a Monday Night Golf League — built with vanilla HTML, C
 
 ## Features
 
-- **Standings** — live team points calculated from all scored rounds
+- **Standings** — three live columns (1st Half / 2nd Half / Total). Sort order shifts with the season: weeks 1–9 sort by 1st Half, weeks 10–18 by 2nd Half, week 19+ by Total. A champion banner appears once the championship match is decided.
+- **Two-half + championship season (19 weeks)** — two 9-week round-robins each crown a half winner; week 19 is a championship match between those winners. Half-winner tiebreakers: head-to-head record → team-net total → name.
 - **Handicaps** — auto-calculated from each player's last 3 rounds; updates weekly
 - **Score Entry** — hole-by-hole score cards with net scoring, stroke allocation, and live point totals
-- **Schedule** — full season schedule with front/back nine assignments and match pairings
+- **Schedule** — full season schedule with front/back nine assignments and match pairings; week 19 displays a "Championship" pairing once both half winners are decided
 - **Matchups** — week-by-week match previews with handicap-adjusted pairings
 - **Stats** — per-player season totals (rounds, avg score, birdies, pars, points, etc.)
 - **Substitute Players** — global sub roster; subs inherit handicap history across seasons
 - **Admin Drawer** — manage teams, players, schedule, substitutes, and course settings
 - **PWA** — installable on iPhone via Safari → Add to Home Screen; works offline
+- **Native iOS + Android** — Capacitor wrappers around the same web app (in-progress for App Store / Play Store submission)
 
 ---
 
@@ -73,7 +75,9 @@ No build step — deploy root files directly to Firebase Hosting:
 ~/.npm-global/bin/firebase deploy --only hosting
 ```
 
-**Always bump the service worker cache version in `sw.js` before deploying** (`bogeys-v9` → `bogeys-v10`, etc.) so users get fresh files.
+**Always bump the service worker cache version in `sw.js` before deploying** (`bogeys-v12` → `bogeys-v13`, etc.) so users get fresh files.
+
+For native iOS/Android, also run `npm run sync` after `firebase deploy` to push the updated web assets into the Capacitor projects.
 
 ---
 
@@ -83,6 +87,6 @@ An admin account is managed in Firebase Console → Authentication → Users. Lo
 
 ---
 
-## Planned: Native iOS & Android App
+## Native iOS & Android (Capacitor)
 
-A Capacitor wrapper is planned to publish the app on the Apple App Store and Google Play Store — same codebase, zero rewrite. See `capacitor-setup-plan.txt` for the full implementation plan.
+The webapp is wrapped with Capacitor for native iOS and Android — same codebase, same Firebase backend. The web PWA, iOS app, and Android app coexist. Phases 1–3 of the wrapper are complete and tested in simulators / emulators; App Store and Play Store submission is pending developer accounts. See `CLAUDE.md` (Capacitor section) for the full setup notes.
