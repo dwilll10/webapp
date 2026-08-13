@@ -272,6 +272,13 @@ function normalizeState(rawState) {
     ? rawState.selectedWeekId
     : schedule.find((week) => week.matches.length)?.id || schedule[0]?.id || "";
 
+  // Half boundary is stored explicitly (rain-outs can make the halves unequal).
+  // Legacy docs with no firstHalfWeeks fall back to the old even-split default.
+  const champIdx = schedule.length - 1;
+  const defFirst = Math.floor(champIdx / 2);
+  let firstHalfWeeks = Number.isInteger(rawState.firstHalfWeeks) ? rawState.firstHalfWeeks : defFirst;
+  firstHalfWeeks = Math.max(1, Math.min(firstHalfWeeks, Math.max(1, champIdx - 1)));
+
   return {
     teams: teams.map((team) => ({
       id: team.id || crypto.randomUUID(),
@@ -288,22 +295,33 @@ function normalizeState(rawState) {
           { id: crypto.randomUUID(), name: "Player 2", startingHandicap: null },
         ],
     })),
-    schedule: schedule.map((week, weekIndex) => ({
-      id: week.id || `week-${weekIndex + 1}`,
-      label: week.label || `Week ${weekIndex + 1}`,
-      date: week.date || "",
-      nines: week.nines === "back" || week.nines === "front" ? week.nines : (weekIndex % 2 === 0 ? "front" : "back"),
-      matches: Array.isArray(week.matches)
-        ? week.matches.map((match, matchIndex) => ({
-          id: match.id || `match-${weekIndex + 1}-${matchIndex + 1}`,
-          teamAId: match.teamAId || "",
-          teamBId: match.teamBId || "",
-        }))
-        : [],
-    })),
+    // Labels are always derived from position so rained-out placeholders stay
+    // unnumbered and playing weeks number continuously (self-heals stored labels).
+    schedule: (() => {
+      let labelN = 0;
+      return schedule.map((week, weekIndex) => {
+        const rainedOut = week.rainedOut === true;
+        if (!rainedOut) labelN += 1;
+        return {
+          id: week.id || `week-${weekIndex + 1}`,
+          label: rainedOut ? "Rained Out" : `Week ${labelN}`,
+          date: week.date || "",
+          nines: week.nines === "back" || week.nines === "front" ? week.nines : (weekIndex % 2 === 0 ? "front" : "back"),
+          rainedOut,
+          matches: Array.isArray(week.matches)
+            ? week.matches.map((match, matchIndex) => ({
+              id: match.id || `match-${weekIndex + 1}-${matchIndex + 1}`,
+              teamAId: match.teamAId || "",
+              teamBId: match.teamBId || "",
+            }))
+            : [],
+        };
+      });
+    })(),
     scores: rawState.scores || {},
     subAssignments: rawState.subAssignments || {},
     selectedWeekId,
+    firstHalfWeeks,
     courseData: normalizeCourseData(rawState.courseData),
   };
 }
@@ -378,6 +396,7 @@ function bindGlobalActions() {
     if (!startDate || !numWeeks || numWeeks < 1) return;
     const dates = generateScheduleDates(startDate, numWeeks);
     state.schedule = createStandardSchedule(state.teams, dates);
+    state.firstHalfWeeks = Math.floor((state.schedule.length - 1) / 2);
     state.selectedWeekId = state.schedule.find((week) => week.matches.length)?.id || state.schedule[0]?.id || "";
     adminSelectedWeekId = state.schedule[0]?.id || null;
     saveState();
@@ -500,6 +519,7 @@ function renderInitYearPanel() {
       }));
       state.teams = newTeams;
       state.schedule = createStandardSchedule(newTeams, generateScheduleDates(lastMondayOfApril(selectedYear), 19));
+      state.firstHalfWeeks = Math.floor((state.schedule.length - 1) / 2);
       state.scores = {};
       state.courseData = normalizeCourseData(priorData.courseData);
       subPlayers = newSubs;
@@ -518,6 +538,7 @@ function renderInitYearPanel() {
     const newTeams = createDefaultTeams();
     state.teams = newTeams;
     state.schedule = createStandardSchedule(newTeams, generateScheduleDates(lastMondayOfApril(selectedYear), 19));
+    state.firstHalfWeeks = Math.floor((state.schedule.length - 1) / 2);
     state.scores = {};
     state.subAssignments = {};
     state.selectedWeekId = state.schedule[0]?.id || "";
@@ -585,14 +606,20 @@ function computeMatchPointsForTeam(week, match, teamId) {
   return { individual, teamNet, total: individual + teamNet };
 }
 
-// Splits the schedule into two equal halves followed by a championship week.
-// For 19-week / 10-team default: first = idx 0..8, second = idx 9..17, championship = idx 18.
+// Splits the schedule into two halves followed by a championship week. The
+// boundary comes from state.firstHalfWeeks (rain-outs can make halves unequal),
+// defaulting to an even split. For the 19-week / 10-team default: first = idx
+// 0..8, second = idx 9..17, championship = idx 18.
 // Returns null if the schedule is too short to have a meaningful structure.
 function getSeasonStructure() {
   const len = (state.schedule || []).length;
   if (len < 3) return null;
   const championshipIdx = len - 1;
-  const halfSize = Math.floor(championshipIdx / 2);
+  // Half boundary is stored on state (rain-outs can make halves unequal);
+  // fall back to the even-split midpoint when it's absent.
+  const halfSize = Number.isInteger(state.firstHalfWeeks)
+    ? Math.max(1, Math.min(state.firstHalfWeeks, championshipIdx - 1))
+    : Math.floor(championshipIdx / 2);
   if (halfSize < 1) return null;
   return {
     firstHalf: { start: 0, end: halfSize - 1 },
@@ -1054,6 +1081,44 @@ function renderPlayerScoreCard(weekId, matchId, teamName, player, nines, points,
   `;
 }
 
+// Captures where focus was headed just before a hole commit tears down and
+// rebuilds the whole scores container (renderScores() replaces the DOM), so
+// the same logical field can be re-focused afterward instead of losing focus.
+let pendingFocusTarget = null;
+
+function describeFocusTarget(el) {
+  if (!el || !el.dataset) return null;
+  if ("holeIndex" in el.dataset) {
+    const { weekId, matchId, playerId, holeIndex } = el.dataset;
+    return { type: "hole", weekId, matchId, playerId, holeIndex };
+  }
+  if (el.hasAttribute("data-sub-toggle")) {
+    const { weekId, matchId, playerId } = el.dataset;
+    return { type: "sub", weekId, matchId, playerId };
+  }
+  return null;
+}
+
+function resolveFocusTarget(desc) {
+  if (!desc) return null;
+  if (desc.type === "hole") {
+    return document.querySelector(`[data-week-id="${desc.weekId}"][data-match-id="${desc.matchId}"][data-player-id="${desc.playerId}"][data-hole-index="${desc.holeIndex}"]`);
+  }
+  if (desc.type === "sub") {
+    return document.querySelector(`[data-sub-toggle][data-week-id="${desc.weekId}"][data-match-id="${desc.matchId}"][data-player-id="${desc.playerId}"]`);
+  }
+  return null;
+}
+
+function focusNextHole(weekId, matchId, playerId, holeIndex) {
+  if (holeIndex >= 8) return;
+  const next = document.querySelector(`[data-week-id="${weekId}"][data-match-id="${matchId}"][data-player-id="${playerId}"][data-hole-index="${holeIndex + 1}"]`);
+  if (next) {
+    next.focus();
+    next.select();
+  }
+}
+
 function bindScoreInputs() {
   if (!auth.currentUser) return;
 
@@ -1069,7 +1134,7 @@ function bindScoreInputs() {
 
   document.querySelectorAll("[data-hole-index]").forEach((input) => {
     input.addEventListener("input", (event) => {
-      const { playerId } = event.target.dataset;
+      const { playerId, weekId, matchId, holeIndex } = event.target.dataset;
       const holeInputs = [...document.querySelectorAll(`[data-player-id="${playerId}"][data-hole-index]`)];
       const values = holeInputs.map((el) => el.value === "" ? null : Number(el.value));
       const allFilled = values.every((v) => Number.isFinite(v));
@@ -1077,6 +1142,28 @@ function bindScoreInputs() {
       if (totalField) {
         totalField.value = allFilled ? values.reduce((sum, v) => sum + v, 0) : "";
       }
+
+      // Auto-advance once a value can't validly extend further (hole inputs
+      // are min="1" max="15"): 2+ digits is always final; a single leading
+      // digit of 2-9 can't become a valid 2-digit score so it's final too;
+      // a lone "1" is ambiguous (could become 10-15) so it waits.
+      const val = event.target.value;
+      if (/^\d+$/.test(val) && (val.length >= 2 || (val.length === 1 && val !== "0" && val !== "1"))) {
+        event.target.blur();
+        focusNextHole(weekId, matchId, playerId, Number(holeIndex));
+      }
+    });
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      const { weekId, matchId, playerId, holeIndex } = event.target.dataset;
+      event.target.blur();
+      focusNextHole(weekId, matchId, playerId, Number(holeIndex));
+    });
+
+    input.addEventListener("focusout", (event) => {
+      pendingFocusTarget = describeFocusTarget(event.relatedTarget);
     });
 
     input.addEventListener("change", (event) => {
@@ -1088,6 +1175,13 @@ function bindScoreInputs() {
       renderHandicaps();
       renderScores();
       renderNextMatchups();
+
+      const target = resolveFocusTarget(pendingFocusTarget);
+      pendingFocusTarget = null;
+      if (target) {
+        target.focus();
+        if (target.select) target.select();
+      }
     });
   });
 }
@@ -1105,11 +1199,16 @@ function renderSchedule() {
   const structure = getSeasonStructure();
   scheduleContainer.innerHTML = state.schedule.map((week) => {
     const isChampionshipWeek = structure && state.schedule[structure.championshipIdx]?.id === week.id;
+    const isRainedOut = week.rainedOut;
     const matches = getEffectiveMatches(week);
-    const emptyMessage = isChampionshipWeek
+    const emptyMessage = isRainedOut
+      ? `Rained out — no play this week.`
+      : isChampionshipWeek
       ? `Championship match — pairings finalize once both half winners are decided.`
       : `Open league night. Use this date for a makeup match, position round, or bye week.`;
-    const headerSuffix = isChampionshipWeek
+    const headerSuffix = isRainedOut
+      ? `Rained Out`
+      : isChampionshipWeek
       ? `Championship`
       : `${matches.length} matches`;
 
@@ -1311,6 +1410,9 @@ function renderScheduleAdmin() {
   }
 
   const week = state.schedule.find((w) => w.id === adminSelectedWeekId);
+  const structure = getSeasonStructure();
+  const isChampWeek = structure && week && state.schedule[structure.championshipIdx]?.id === week.id;
+  const canRainOut = week && !week.rainedOut && !isChampWeek;
 
   scheduleAdminContainer.innerHTML = `
     <label class="compact-field">
@@ -1350,6 +1452,23 @@ function renderScheduleAdmin() {
           `).join("")}
         </div>
         <button class="btn btn-ghost" type="button" data-add-match-week-id="${week.id}" style="margin-top:10px">Add Match</button>
+        ${canRainOut ? `
+          <div class="rainout-controls" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+            <label class="compact-field" style="margin:0">
+              <span>Rain Out This Week</span>
+              <select id="rainoutMode">
+                <option value="push">Push back + add week at end</option>
+                <option value="makeup">Make up at end of this half</option>
+                <option value="cancel">Cancel (remove week)</option>
+              </select>
+            </label>
+            <button class="btn btn-danger" type="button" id="applyRainoutBtn" data-week-id="${week.id}">Apply Rain-Out</button>
+          </div>
+        ` : week && week.rainedOut ? `
+          <div class="rainout-controls" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;color:var(--muted)">
+            This week is marked Rained Out.
+          </div>
+        ` : ""}
       </article>
     ` : ""}
   `;
@@ -1427,6 +1546,25 @@ function renderScheduleAdmin() {
       });
       saveState();
       renderAll();
+    });
+  }
+
+  const applyRainoutBtn = document.getElementById("applyRainoutBtn");
+  if (applyRainoutBtn) {
+    applyRainoutBtn.addEventListener("click", (event) => {
+      const weekId = event.target.dataset.weekId;
+      const mode = document.getElementById("rainoutMode")?.value;
+      const w = state.schedule.find((entry) => entry.id === weekId);
+      if (!w || !mode) return;
+      const summary = {
+        push: `Mark ${w.label} as rained out and push every matchup from that week one week later (a week is added at the end of the season).`,
+        makeup: `Mark ${w.label} as rained out and replay its matchup on a new week added at the end of its half (the rest of the season shifts one week later).`,
+        cancel: `Cancel ${w.label} entirely — its matchup is removed and its scores deleted. Later weeks keep their dates. This cannot be undone.`,
+      }[mode];
+      const warn = w.matches.some((m) => state.scores?.[weekId]?.[m.id])
+        ? "\n\nNote: this week already has scores entered." : "";
+      if (!window.confirm(`${summary}${warn}`)) return;
+      applyRainOut(weekId, mode);
     });
   }
 }
@@ -1571,15 +1709,13 @@ function getNextMatchupWeek() {
     .sort((left, right) => left.date.localeCompare(right.date));
   if (!sorted.length) return null;
 
-  const dayMs = 24 * 60 * 60 * 1000;
+  // Show the next matchup whose date is today or later. On a matchup's day it's
+  // still shown; the day after (its date < today) it drops off and the following
+  // matchup takes over. Because we never look backward, a rainout or holiday gap
+  // can't revert this page to a previous week. Falls back to the last matchup
+  // once the whole season is in the past.
   const nextWeek = sorted.find((week) => new Date(`${week.date}T00:00:00`) >= today);
-  if (!nextWeek) return sorted[sorted.length - 1];
-
-  const daysAway = (new Date(`${nextWeek.date}T00:00:00`) - today) / dayMs;
-  if (daysAway <= 6) return nextWeek;
-
-  const previousWeek = [...sorted].reverse().find((week) => new Date(`${week.date}T00:00:00`) < today);
-  return previousWeek || nextWeek;
+  return nextWeek || sorted[sorted.length - 1];
 }
 
 function getPlayerRows() {
@@ -2046,6 +2182,99 @@ function generateScheduleDates(startDate, numWeeks) {
     dates.push(d.toISOString().split("T")[0]);
   }
   return dates;
+}
+
+// ---------------------------------------------------------------------------
+// Rain-out handling
+// ---------------------------------------------------------------------------
+
+function addDays(dateStr, days) {
+  if (!dateStr) return dateStr;
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+// Shifts the dates of every week from startIdx onward by `days`.
+function shiftWeekDatesFrom(startIdx, days) {
+  for (let i = startIdx; i < state.schedule.length; i++) {
+    state.schedule[i].date = addDays(state.schedule[i].date, days);
+  }
+}
+
+// Keeps week labels sequential after a structural change.
+function relabelWeeks() {
+  let n = 0;
+  state.schedule.forEach((w) => {
+    if (w.rainedOut) { w.label = "Rained Out"; }
+    else { n += 1; w.label = `Week ${n}`; }
+  });
+}
+
+// New week object with a unique id (crypto UUID avoids colliding with
+// normalizeState's `week-${index+1}` fallback ids).
+function makeWeek(date, nines, matches = []) {
+  return { id: crypto.randomUUID(), label: "", date, nines, matches, rainedOut: false };
+}
+
+// Records a rain-out for the given week. mode is one of:
+//   'push'   - week becomes an empty "Rained Out" placeholder; every matchup
+//              from that week onward plays one week later; season grows by one.
+//   'makeup' - weeks between the rainout and the end of its half keep their
+//              dates; the rained matchup replays on a new Monday at the end of
+//              that half; the other half + championship shift one week later.
+//   'cancel' - the week is removed entirely (its scores too); later weeks keep
+//              their dates/matchups; the half it was in shrinks by one week.
+function applyRainOut(weekId, mode) {
+  const W = state.schedule.findIndex((w) => w.id === weekId);
+  const s = getSeasonStructure();
+  if (W < 0 || !s || W === s.championshipIdx) return;
+
+  const inFirstHalf = W <= s.firstHalf.end;
+  const curFirst = s.firstHalf.end + 1; // current first-half week count
+
+  if (mode === "push") {
+    const rained = state.schedule[W];
+    const placeholder = makeWeek(rained.date, rained.nines, []);
+    placeholder.rainedOut = true;
+    shiftWeekDatesFrom(W, 7);                  // W..end each +7 (extends the season)
+    state.schedule.splice(W, 0, placeholder);  // placeholder keeps the original Monday
+    if (inFirstHalf) state.firstHalfWeeks = curFirst + 1;
+  } else if (mode === "makeup") {
+    const rained = state.schedule[W];
+    const halfEndIdx = inFirstHalf ? s.firstHalf.end : s.secondHalf.end;
+    const makeupMatches = rained.matches.map((m) => ({
+      id: crypto.randomUUID(),
+      teamAId: m.teamAId,
+      teamBId: m.teamBId,
+    }));
+    rained.matches = [];
+    rained.rainedOut = true;                                       // placeholder stays on its date
+    const makeupDate = addDays(state.schedule[halfEndIdx].date, 7);
+    shiftWeekDatesFrom(halfEndIdx + 1, 7);                         // rest of season +7
+    const makeup = makeWeek(makeupDate, halfEndIdx % 2 === 0 ? "back" : "front", makeupMatches);
+    state.schedule.splice(halfEndIdx + 1, 0, makeup);
+    if (inFirstHalf) state.firstHalfWeeks = curFirst + 1;          // makeup lands in the first half
+  } else if (mode === "cancel") {
+    if (state.schedule.length - 1 < 3) return;                    // keep a meaningful structure
+    delete state.scores[weekId];
+    delete state.subAssignments[weekId];
+    state.schedule.splice(W, 1);                                  // remove; do NOT shift later dates
+    if (inFirstHalf) state.firstHalfWeeks = curFirst - 1;
+  } else {
+    return;
+  }
+
+  relabelWeeks();
+  if (!state.schedule.some((w) => w.id === adminSelectedWeekId)) {
+    adminSelectedWeekId = state.schedule[Math.min(W, state.schedule.length - 1)]?.id || null;
+  }
+  if (!state.schedule.some((w) => w.id === state.selectedWeekId)) {
+    state.selectedWeekId = adminSelectedWeekId;
+  }
+  saveState();
+  renderWeekOptions();
+  renderAll();
 }
 
 function buildDoubleRoundRobin(teamIds) {

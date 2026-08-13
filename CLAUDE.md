@@ -41,13 +41,19 @@ Five files in the repo root:
 ```js
 {
   teams: [{ id, name, points, players: [{ id, name, startingHandicap }] }],
-  schedule: [{ id, label, date, nines, matches: [{ id, teamAId, teamBId }] }],
+  schedule: [{ id, label, date, nines, rainedOut, matches: [{ id, teamAId, teamBId }] }],
   scores: { [weekId]: { [matchId]: { [playerId]: { holes: [×9] } } } },
   subAssignments: { [weekId]: { [matchId]: { [playerId]: subPlayerId } } },
   selectedWeekId: string,
+  firstHalfWeeks: number,   // stored half boundary (see Standings & Championship)
   courseData: { name: string, pars: [×18], handicaps: [×18] }
 }
 ```
+
+`week.rainedOut` marks an empty "Rained Out" placeholder (see Rain-Outs). Week `label`s are **always
+derived from position** in `normalizeState` (never trusted from storage): playing weeks number
+continuously as `Week N`, rained-out placeholders are unnumbered (`"Rained Out"`). This self-heals
+labels for weeks rained out under older code.
 
 Global substitute roster is stored separately at `league/subs` as `{ subPlayers: [...] }` and held in the module-level `subPlayers` array (not in `state`). `saveSubState()` writes to `league/subs`.
 
@@ -84,7 +90,7 @@ Global substitute roster is stored separately at `league/subs` as `{ subPlayers:
 
 ## Standings & Championship (two-half + final)
 
-The 19-week season is split into two 9-week halves followed by a championship match. The split is **derived**, not stored — `getSeasonStructure()` returns `{ firstHalf, secondHalf, championshipIdx }` based on `state.schedule.length` (championship = last week, halves = floor((len-1)/2) weeks each). Returns `null` when the schedule is too short to be meaningful.
+The 19-week season is split into two 9-week halves followed by a championship match. `getSeasonStructure()` returns `{ firstHalf, secondHalf, championshipIdx }`; championship = last week (`len-1`), and the half boundary is **`state.firstHalfWeeks`** (number of week *slots* in the first half), falling back to the even-split `floor((len-1)/2)` when absent. Returns `null` when the schedule is too short to be meaningful. The boundary is stored (not always derived) because rain-outs can make the halves unequal — it is maintained only by `applyRainOut` and reset to the even split on full schedule regeneration / season init. All standings code (`getActiveHalf`, `renderStandings`, `getHalfWinner`, `computeTeamPoints`, `getChampionshipMatch`, `getEffectiveMatches`) reads through `getSeasonStructure()` and explicit `{startIdx,endIdx}` ranges, so the stored boundary flows everywhere automatically.
 
 - **`renderStandings()`** computes three numbers per team: `firstHalf`, `secondHalf`, `total = firstHalf + secondHalf` (week 19 is **excluded** from total). The active sort column is determined by `getActiveHalf()`:
   - today < second-half start date → sort by **1st Half**
@@ -96,6 +102,37 @@ The 19-week season is split into two 9-week halves followed by a championship ma
 - **`getEffectiveMatches(week)`** is the render-side bridge: returns `week.matches` for normal weeks, and `[getChampionshipMatch()]` (or `[]`) for the championship week. Used by `renderScores`, `renderSchedule`, `renderNextMatchups`, `getNextMatchupWeek`, and `renderWeekOptions` so the championship pairing flows through every UI surface without needing schedule writes.
 - **Stable match id `'championship-match'`** keeps `state.scores['week-19']['championship-match'][playerId].holes` consistent across half-winner changes. If admins later re-edit a week-9 score and the half winner changes, scores already entered for the prior teams remain in storage but stop displaying (no auto-cleanup).
 - **`getChampion()`** uses `computeMatchPointsForTeam` on the championship match to return the winner's team id, `null` when no scores entered, or `{ tie: true, ... }` if the match is fully scored but tied. `renderStandings()` uses this to render `#championBanner`.
+
+## Rain-Outs
+
+`applyRainOut(weekId, mode)` records a rained-out league night. Triggered from the **Schedule Editor**
+admin panel (a "Rain Out This Week" select + "Apply Rain-Out" button, shown only for a normal,
+non-championship, not-already-rained week; a `confirm()` summarizes the effect first). Scores/subs are
+keyed by stable week `id` and glued to week objects, so operations move/insert/remove whole week
+objects (keeping ids) and score data stays correct. Three modes:
+
+- **`push`** — inserts an empty "Rained Out" placeholder at the rained week's date; every matchup from
+  that week onward shifts one week later (`shiftWeekDatesFrom`); the season grows by a week at the end.
+- **`makeup`** — empties the rained week into a placeholder on its date; replays its matchup on a new
+  week inserted at the **end of its half**; weeks between keep their dates; the rest of the season
+  shifts +7. The makeup is counted in that half's standings.
+- **`cancel`** — removes the week entirely (and its `scores`/`subAssignments`); later weeks keep their
+  dates/matchups; the half shrinks by one. Guarded to keep ≥3 weeks.
+
+Each mode updates `state.firstHalfWeeks` so the half boundary stays correct (push/makeup in the first
+half: `+1`; cancel in the first half: `-1`; second-half ops leave it unchanged and the second half
+grows/shrinks as the derived remainder). Helpers: `addDays`, `shiftWeekDatesFrom`, `relabelWeeks`
+(skip-counter — playing weeks number continuously, placeholders are unnumbered), `makeWeek` (fresh
+`crypto.randomUUID()` id to avoid colliding with `normalizeState`'s `week-N` fallback ids).
+`renderSchedule` shows rained weeks with the "Rained Out" label + an empty-state message.
+
+## Upcoming Matchups (`getNextMatchupWeek`)
+
+`renderNextMatchups()` shows the **next matchup dated today or later** — no look-back. On a matchup's
+day it's still shown; the day after (its `date < today`) it drops off and the following matchup takes
+over. Because it never reverts to a past week, a rain-out placeholder (no matches → filtered out) or a
+holiday gap can't pull the page back to a previous week. Falls back to the last matchup once the whole
+season is in the past.
 
 ## Course Data
 
@@ -132,6 +169,8 @@ Match summary at the bottom of each match card shows individual points + team ne
 
 The **week selector** (`#scoreWeekSelect`) uses the `.year-select` pill style with a green tint. It does NOT call `saveState()` on change — the selected week is pure local UI state. This prevents `onSnapshot` from reverting the selection. On each navigation to the scores page, `state.selectedWeekId` is reset to the smart default (most recently completed week, or week 1 before season start).
 
+**Hole input focus advance:** every hole commit's `change` handler calls `renderScores()`, which rebuilds the whole scores container — so whatever the browser was about to focus next (Tab target, a clicked field) gets destroyed mid-transition and focus is silently dropped. `describeFocusTarget()`/`resolveFocusTarget()`/`pendingFocusTarget` capture `event.relatedTarget` on `focusout` (before the rebuild) and re-focus the equivalent freshly-rendered element after `renderScores()` runs, restoring both native Tab order and click-to-a-specific-hole. `focusNextHole()` additionally auto-advances while typing once a value can't validly extend further (hole inputs are `min="1" max="15"`: 2+ digits, or a single leading digit 2-9, are always final; a lone `"1"` waits since it could become 10-15 — Enter forces an immediate advance for that case). Auto-advance must call `event.target.blur()` *before* calling `focusNextHole()` rather than focusing the next input directly — focusing another element first triggers the destructive re-render synchronously from inside that same focus transition, and the browser's own completion of the original (now-detached) focus target then clobbers the correct re-focus, dropping focus to `<body>`.
+
 ## Handicaps Page
 
 The **Latest Scores** column shows the last 3 rounds used for handicap calculation (`.slice(-3)` on `getPlayerRounds` / `getSubRounds`). This matches exactly the scores feeding into `calculateHandicap`.
@@ -149,7 +188,7 @@ The **Latest Scores** column shows the last 3 rounds used for handicap calculati
 All inside `#adminDrawer` (hidden until logged in). Four panels:
 
 1. **Teams and Players** — dropdown to select a team; edit name, points, player names, and starting handicaps per player.
-2. **Schedule Editor** — number of weeks + Week 1 date inputs, generate button; dropdown to select a week; edit date (cascades to subsequent weeks), front/back nine, and match pairings.
+2. **Schedule Editor** — number of weeks + Week 1 date inputs, generate button; dropdown to select a week; edit date (cascades to subsequent weeks), front/back nine, and match pairings. Also hosts the **Rain Out This Week** control (see Rain-Outs).
 3. **Substitute Players** — global list of registered subs (persists across all years); add/remove subs and set their name and starting handicap.
 4. **Course Settings** — per-year; course name + par and hole handicap for all 18 holes. Defaults to Pine Grove values. Saved to `state.courseData` via `saveState()`.
 
@@ -182,7 +221,7 @@ The app is shipped as a **PWA**. Users add it to their iPhone home screen from S
 ### ⚠️ Cache version — bump on every deploy
 Every time `app.js` or `styles.css` changes, increment the cache version in `sw.js`:
 ```js
-const CACHE = 'bogeys-v12'; // bump to v13, v14, etc. on each deploy
+const CACHE = 'bogeys-v18'; // bump to v19, v20, etc. on each deploy
 ```
 Without this, users (including the home screen app) will be served stale files from the old cache.
 
@@ -471,7 +510,7 @@ After any change to `app.js`, `styles.css`, or `index.html`:
 
 ```bash
 # 1. Edit root files as usual
-# 2. Bump sw.js CACHE version (currently bogeys-v12 → v13, v14, etc.)
+# 2. Bump sw.js CACHE version (currently bogeys-v18 → v19, v20, etc.)
 ~/.npm-global/bin/firebase deploy --only hosting   # update live web/PWA
 npm run sync                                         # sync to native projects
 # iOS: Cmd+R in Xcode to rebuild simulator / Archive for App Store
