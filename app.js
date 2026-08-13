@@ -915,8 +915,27 @@ function renderScores() {
     return;
   }
 
+  // Snapshot before the destructive rebuild: removing the currently-focused
+  // hole input via innerHTML fires its own 'focusout' (relatedTarget null),
+  // which would otherwise reset the module-level pendingFocusTarget to null
+  // via the listener still attached to the about-to-be-destroyed node —
+  // clobbering the exact value we're about to need below.
+  const focusDesc = pendingFocusTarget;
+
   scoresContainer.innerHTML = matches.map((match) => renderScoreMatchCard(week, match)).join("");
   bindScoreInputs();
+
+  // Restores focus to whatever hole/sub field was last known to be focused.
+  // renderScores() runs on every Firestore onSnapshot (see subscribeToState),
+  // not just from a direct edit here, so this can't live only in the change
+  // handler that made the edit — a snapshot echo of our own write fires
+  // renderAll() -> renderScores() again shortly after, on a separate path
+  // that would otherwise silently drop focus a second time.
+  const focusTarget = resolveFocusTarget(focusDesc);
+  if (focusTarget) {
+    focusTarget.focus();
+    if (focusTarget.select) focusTarget.select();
+  }
 }
 
 function calculateMatchPoints(holesA, holesB, hcpA, hcpB, holeHandicaps) {
@@ -1114,6 +1133,7 @@ function focusNextHole(weekId, matchId, playerId, holeIndex) {
   if (holeIndex >= 8) return;
   const next = document.querySelector(`[data-week-id="${weekId}"][data-match-id="${matchId}"][data-player-id="${playerId}"][data-hole-index="${holeIndex + 1}"]`);
   if (next) {
+    pendingFocusTarget = describeFocusTarget(next);
     next.focus();
     next.select();
   }
@@ -1175,13 +1195,6 @@ function bindScoreInputs() {
       renderHandicaps();
       renderScores();
       renderNextMatchups();
-
-      const target = resolveFocusTarget(pendingFocusTarget);
-      pendingFocusTarget = null;
-      if (target) {
-        target.focus();
-        if (target.select) target.select();
-      }
     });
   });
 }

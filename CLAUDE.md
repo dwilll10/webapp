@@ -169,7 +169,9 @@ Match summary at the bottom of each match card shows individual points + team ne
 
 The **week selector** (`#scoreWeekSelect`) uses the `.year-select` pill style with a green tint. It does NOT call `saveState()` on change — the selected week is pure local UI state. This prevents `onSnapshot` from reverting the selection. On each navigation to the scores page, `state.selectedWeekId` is reset to the smart default (most recently completed week, or week 1 before season start).
 
-**Hole input focus advance:** every hole commit's `change` handler calls `renderScores()`, which rebuilds the whole scores container — so whatever the browser was about to focus next (Tab target, a clicked field) gets destroyed mid-transition and focus is silently dropped. `describeFocusTarget()`/`resolveFocusTarget()`/`pendingFocusTarget` capture `event.relatedTarget` on `focusout` (before the rebuild) and re-focus the equivalent freshly-rendered element after `renderScores()` runs, restoring both native Tab order and click-to-a-specific-hole. `focusNextHole()` additionally auto-advances while typing once a value can't validly extend further (hole inputs are `min="1" max="15"`: 2+ digits, or a single leading digit 2-9, are always final; a lone `"1"` waits since it could become 10-15 — Enter forces an immediate advance for that case). Auto-advance must call `event.target.blur()` *before* calling `focusNextHole()` rather than focusing the next input directly — focusing another element first triggers the destructive re-render synchronously from inside that same focus transition, and the browser's own completion of the original (now-detached) focus target then clobbers the correct re-focus, dropping focus to `<body>`.
+**Hole input focus advance:** every hole commit's `change` handler calls `renderScores()`, which rebuilds the whole scores container — so whatever the browser was about to focus next (Tab target, a clicked field) gets destroyed mid-transition and focus is silently dropped. `describeFocusTarget()`/`resolveFocusTarget()`/`pendingFocusTarget` capture `event.relatedTarget` on `focusout` (before the rebuild) and re-focus the equivalent freshly-rendered element. `focusNextHole()` additionally auto-advances while typing once a value can't validly extend further (hole inputs are `min="1" max="15"`: 2+ digits, or a single leading digit 2-9, are always final; a lone `"1"` waits since it could become 10-15 — Enter forces an immediate advance for that case). Auto-advance must call `event.target.blur()` *before* calling `focusNextHole()` rather than focusing the next input directly — focusing another element first triggers the destructive re-render synchronously from inside that same focus transition, and the browser's own completion of the original (now-detached) focus target then clobbers the correct re-focus, dropping focus to `<body>`.
+
+The restore itself lives **inside `renderScores()`**, not just in the `change` handler that made the edit — `renderScores()` also runs from `renderAll()` on every Firestore `onSnapshot` (see State sync), including the snapshot echo of our *own* write, which fires asynchronously a beat after the edit and would otherwise silently drop focus a second time on a path with no relation to any focus event. `pendingFocusTarget` is therefore never cleared after use — it persists as "last known focus intent" across however many rebuilds follow. This introduces a second gotcha: `renderScores()` must snapshot `pendingFocusTarget` into a local **before** the destructive `innerHTML` rebuild, not read the module variable after — removing the currently-focused node via `innerHTML` fires its own `focusout` (with `relatedTarget` null) through the listener still attached to that about-to-be-destroyed node, which would otherwise reset `pendingFocusTarget` to null moments before `renderScores()` reads it.
 
 ## Handicaps Page
 
@@ -221,7 +223,7 @@ The app is shipped as a **PWA**. Users add it to their iPhone home screen from S
 ### ⚠️ Cache version — bump on every deploy
 Every time `app.js` or `styles.css` changes, increment the cache version in `sw.js`:
 ```js
-const CACHE = 'bogeys-v18'; // bump to v19, v20, etc. on each deploy
+const CACHE = 'bogeys-v19'; // bump to v20, v21, etc. on each deploy
 ```
 Without this, users (including the home screen app) will be served stale files from the old cache.
 
@@ -510,7 +512,7 @@ After any change to `app.js`, `styles.css`, or `index.html`:
 
 ```bash
 # 1. Edit root files as usual
-# 2. Bump sw.js CACHE version (currently bogeys-v18 → v19, v20, etc.)
+# 2. Bump sw.js CACHE version (currently bogeys-v19 → v20, v21, etc.)
 ~/.npm-global/bin/firebase deploy --only hosting   # update live web/PWA
 npm run sync                                         # sync to native projects
 # iOS: Cmd+R in Xcode to rebuild simulator / Archive for App Store
