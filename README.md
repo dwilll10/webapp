@@ -13,6 +13,7 @@ A web app for managing a Monday Night Golf League — built with vanilla HTML, C
 - **Handicaps** — auto-calculated from each player's last 3 rounds; updates weekly
 - **Score Entry** — hole-by-hole score cards with net scoring, stroke allocation, and live point totals
 - **Schedule** — full season schedule with front/back nine assignments and match pairings; week 19 displays a "Championship" pairing once both half winners are decided
+- **Rain-Outs** — admin can record a rained-out league night (push the season back a week, schedule a makeup at the end of its half, or cancel it outright); standings and week numbering adjust automatically
 - **Matchups** — week-by-week match previews with handicap-adjusted pairings
 - **Stats** — per-player season totals (rounds, avg score, birdies, pars, points, etc.)
 - **Substitute Players** — global sub roster; subs inherit handicap history across seasons
