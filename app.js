@@ -594,7 +594,6 @@ function computeMatchPointsForTeam(week, match, teamId) {
   if (!teamA || !teamB) return { individual: 0, teamNet: 0, total: 0 };
 
   const holeHandicaps = getNineHandicaps(week.nines);
-  const holePars = getNinePars(week.nines);
   const sortedA = getSortedPlayers(week.id, match.id, teamA);
   const sortedB = getSortedPlayers(week.id, match.id, teamB);
 
@@ -608,7 +607,6 @@ function computeMatchPointsForTeam(week, match, teamId) {
       holeHandicaps,
       isNoShow(week.id, match.id, sortedA[i].id),
       isNoShow(week.id, match.id, sortedB[i].id),
-      holePars,
     );
     const pts = isA ? pointsA : pointsB;
     individual += pts.filter((p) => p !== null).reduce((s, p) => s + p, 0);
@@ -952,31 +950,15 @@ function renderScores() {
   }
 }
 
-function calculateMatchPoints(holesA, holesB, hcpA, hcpB, holeHandicaps, noShowA = false, noShowB = false, holePars = null) {
+function calculateMatchPoints(holesA, holesB, hcpA, hcpB, holeHandicaps, noShowA = false, noShowB = false) {
   if (noShowA || noShowB) {
-    // A No-Show guarantees the real player at least a 5-4 win (out of the 9-point
-    // pool). Every stroke their gross score beats their handicap-adjusted expected
-    // score (par + handicap) shifts another half point their way, up to a 9-0 sweep.
-    const realHoles = noShowA ? holesB : holesA;
-    const realHcp = noShowA ? hcpB : hcpA;
-    const realTotal = calculateRoundTotal(realHoles);
-    const parTotal = holePars ? holePars.reduce((s, p) => s + p, 0) : null;
-    let realPoints = 5;
-    if (realTotal !== null && parTotal !== null) {
-      const strokesBetter = Math.max(0, parTotal + (realHcp ?? 0) - realTotal);
-      realPoints = Math.min(9, 5 + strokesBetter * 0.5);
-    }
-    const noShowPoints = 9 - realPoints;
-    const pointsA = Array(9).fill(0);
-    const pointsB = Array(9).fill(0);
-    if (noShowA) {
-      pointsA[0] = noShowPoints;
-      pointsB[0] = realPoints;
-    } else {
-      pointsA[0] = realPoints;
-      pointsB[0] = noShowPoints;
-    }
-    return { pointsA, pointsB, strokeHolesA: new Set(), strokeHolesB: new Set() };
+    // A No-Show forces every hole lost, regardless of any scores entered.
+    return {
+      pointsA: Array(9).fill(noShowA ? 0 : 1),
+      pointsB: Array(9).fill(noShowB ? 0 : 1),
+      strokeHolesA: new Set(),
+      strokeHolesB: new Set(),
+    };
   }
   const roundedA = hcpA ?? 0;
   const roundedB = hcpB ?? 0;
@@ -1017,7 +999,6 @@ function renderScoreMatchCard(week, match) {
   }
 
   const holeHandicaps = getNineHandicaps(week.nines);
-  const holePars = getNinePars(week.nines);
 
   // Sort each team by handicap so lowest-hcp player is always "player A"
   const sortedA = getSortedPlayers(week.id, match.id, teamA);
@@ -1035,7 +1016,6 @@ function renderScoreMatchCard(week, match) {
       holeHandicaps,
       isNoShow(week.id, match.id, pA.id),
       isNoShow(week.id, match.id, pB.id),
-      holePars,
     );
   });
 
@@ -2124,7 +2104,6 @@ function collectPlayerStats(playerId) {
           holeHandicaps,
           isNoShow(week.id, match.id, pA.id),
           isNoShow(week.id, match.id, pB.id),
-          holePars,
         );
         const pts = pA.id === playerId ? pointsA : pointsB;
         points += pts.filter((p) => p !== null).reduce((s, p) => s + p, 0);
@@ -2165,7 +2144,6 @@ function collectSubStats(subId) {
           holeHandicaps,
           isNoShow(week.id, match.id, pA.id),
           isNoShow(week.id, match.id, pB.id),
-          holePars,
         );
         const pts = pA.id === regularPlayerId ? pointsA : pointsB;
         points += pts.filter((p) => p !== null).reduce((s, p) => s + p, 0);

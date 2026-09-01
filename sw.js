@@ -1,4 +1,4 @@
-const CACHE = 'bogeys-v21';
+const CACHE = 'bogeys-v22';
 const ASSETS = ['/', '/index.html', '/app.js', '/styles.css'];
 
 self.addEventListener('install', e => {
