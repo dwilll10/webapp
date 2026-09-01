@@ -556,6 +556,16 @@ function calculateTeamNetPoints(week, match) {
   const teamB = getTeam(match.teamBId);
   if (!teamA || !teamB) return null;
 
+  // A No-Show forces an automatic team-net loss, bypassing the raw-score comparison entirely.
+  const noShowA = teamA.players.some((p) => isNoShow(week.id, match.id, p.id));
+  const noShowB = teamB.players.some((p) => isNoShow(week.id, match.id, p.id));
+  if (noShowA || noShowB) {
+    const pts = noShowA && noShowB ? { teamA: 0, teamB: 0 }
+              : noShowA ? { teamA: 0, teamB: 2 }
+              : { teamA: 2, teamB: 0 };
+    return { ...pts, netA: null, netB: null };
+  }
+
   const totals = [teamA, teamB].map((team) =>
     team.players.map((p) => calculateRoundTotal(getScoreEntry(week.id, match.id, p.id).holes))
   );
@@ -595,6 +605,8 @@ function computeMatchPointsForTeam(week, match, teamId) {
       getEffectiveHandicap(week.id, match.id, sortedA[i].id),
       getEffectiveHandicap(week.id, match.id, sortedB[i].id),
       holeHandicaps,
+      isNoShow(week.id, match.id, sortedA[i].id),
+      isNoShow(week.id, match.id, sortedB[i].id),
     );
     const pts = isA ? pointsA : pointsB;
     individual += pts.filter((p) => p !== null).reduce((s, p) => s + p, 0);
@@ -938,7 +950,16 @@ function renderScores() {
   }
 }
 
-function calculateMatchPoints(holesA, holesB, hcpA, hcpB, holeHandicaps) {
+function calculateMatchPoints(holesA, holesB, hcpA, hcpB, holeHandicaps, noShowA = false, noShowB = false) {
+  if (noShowA || noShowB) {
+    // A No-Show forces every hole lost, regardless of any scores entered.
+    return {
+      pointsA: Array(9).fill(noShowA ? 0 : 1),
+      pointsB: Array(9).fill(noShowB ? 0 : 1),
+      strokeHolesA: new Set(),
+      strokeHolesB: new Set(),
+    };
+  }
   const roundedA = hcpA ?? 0;
   const roundedB = hcpB ?? 0;
   const diff = roundedA - roundedB;
@@ -993,6 +1014,8 @@ function renderScoreMatchCard(week, match) {
       getEffectiveHandicap(week.id, match.id, pA.id),
       getEffectiveHandicap(week.id, match.id, pB.id),
       holeHandicaps,
+      isNoShow(week.id, match.id, pA.id),
+      isNoShow(week.id, match.id, pB.id),
     );
   });
 
@@ -1046,15 +1069,17 @@ function renderPlayerScoreCard(weekId, matchId, teamName, player, nines, points,
   const totalPoints = points ? points.filter((p) => p !== null).reduce((s, p) => s + p, 0) : null;
   const hasPoints = points && points.some((p) => p !== null);
   const subId = getSubAssignment(weekId, matchId, player.id);
-  const sub = subId ? getSubPlayer(subId) : null;
+  const noShow = subId === NO_SHOW_ID;
+  const sub = subId && !noShow ? getSubPlayer(subId) : null;
   const handicap = getEffectiveHandicap(weekId, matchId, player.id);
-  const displayName = sub ? sub.name : player.name;
+  const displayName = noShow ? "No-Show" : sub ? sub.name : player.name;
   return `
     <section class="player-score-card">
       <div class="player-card-header">
         <h4>
           ${escapeHtml(displayName)}
           ${sub ? `<span class="sub-badge">SUB for ${escapeHtml(player.name)}</span>` : ""}
+          ${noShow ? `<span class="sub-badge">NO-SHOW for ${escapeHtml(player.name)}</span>` : ""}
         </h4>
         ${hasPoints ? `<span class="points-badge">${Number.isInteger(totalPoints) ? totalPoints : totalPoints.toFixed(1)} pts</span>` : ""}
       </div>
@@ -1064,38 +1089,47 @@ function renderPlayerScoreCard(weekId, matchId, teamName, player, nines, points,
             <span>Player</span>
             <select data-sub-toggle data-week-id="${weekId}" data-match-id="${matchId}" data-player-id="${player.id}">
               <option value="">Regular — ${escapeHtml(player.name)}</option>
+              <option value="${NO_SHOW_ID}" ${noShow ? "selected" : ""}>No-Show</option>
               ${subPlayers.map((s) => `<option value="${s.id}" ${s.id === subId ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}
             </select>
           </label>
           ${sub ? `<span class="sub-hcp-note">Hcp: ${formatHandicap(handicap)}</span>` : ""}
         </div>
       ` : ""}
-      <div class="score-summary">
-        <strong>${escapeHtml(teamName)}</strong>
-        <span>Hcp: ${formatHandicap(handicap)}${strokeHoles && strokeHoles.size > 0 ? ` · ${strokeHoles.size} strokes` : ""}</span>
-      </div>
-      <div class="hole-grid">
-        ${Array.from({ length: 9 }, (_, index) => {
-          const hasStroke = strokeHoles && strokeHoles.has(index);
-          const pt = points ? points[index] : null;
-          const holeClass = pt === 1 ? " hole-win" : pt === 0.5 ? " hole-tie" : "";
-          return `
-            <label class="hole-field${holeClass}">
-              <span class="hole-label-row">${nines === "back" ? index + 10 : index + 1}${hasStroke ? `<span class="stroke-dot">1</span>` : ""}</span>
-              <span class="hole-par">P${pars[index]} · h${holeHandicaps[index]}</span>
-              <input type="number" min="1" max="15" value="${scoreEntry.holes[index] ?? ""}"
-                data-week-id="${weekId}" data-match-id="${matchId}"
-                data-player-id="${player.id}" data-hole-index="${index}"
-                ${isAdmin ? "" : "disabled"}>
-            </label>
-          `;
-        }).join("")}
-        <label class="hole-field hole-total">
-          <span>Total</span>
-          <span class="hole-par">P${pars.reduce((s, p) => s + p, 0)}</span>
-          <input type="number" readonly tabindex="-1" value="${total ?? ""}" data-player-total="${player.id}">
-        </label>
-      </div>
+      ${noShow ? `
+        <div class="score-summary">
+          <strong>${escapeHtml(teamName)}</strong>
+          <span>No-Show</span>
+        </div>
+        <div class="empty-state">No-Show — automatic loss of every hole and the team-net points for this match.</div>
+      ` : `
+        <div class="score-summary">
+          <strong>${escapeHtml(teamName)}</strong>
+          <span>Hcp: ${formatHandicap(handicap)}${strokeHoles && strokeHoles.size > 0 ? ` · ${strokeHoles.size} strokes` : ""}</span>
+        </div>
+        <div class="hole-grid">
+          ${Array.from({ length: 9 }, (_, index) => {
+            const hasStroke = strokeHoles && strokeHoles.has(index);
+            const pt = points ? points[index] : null;
+            const holeClass = pt === 1 ? " hole-win" : pt === 0.5 ? " hole-tie" : "";
+            return `
+              <label class="hole-field${holeClass}">
+                <span class="hole-label-row">${nines === "back" ? index + 10 : index + 1}${hasStroke ? `<span class="stroke-dot">1</span>` : ""}</span>
+                <span class="hole-par">P${pars[index]} · h${holeHandicaps[index]}</span>
+                <input type="number" min="1" max="15" value="${scoreEntry.holes[index] ?? ""}"
+                  data-week-id="${weekId}" data-match-id="${matchId}"
+                  data-player-id="${player.id}" data-hole-index="${index}"
+                  ${isAdmin ? "" : "disabled"}>
+              </label>
+            `;
+          }).join("")}
+          <label class="hole-field hole-total">
+            <span>Total</span>
+            <span class="hole-par">P${pars.reduce((s, p) => s + p, 0)}</span>
+            <input type="number" readonly tabindex="-1" value="${total ?? ""}" data-player-total="${player.id}">
+          </label>
+        </div>
+      `}
     </section>
   `;
 }
@@ -1894,6 +1928,13 @@ function setSubAssignment(weekId, matchId, playerId, subId) {
   }
 }
 
+// Reserved sub-assignment sentinel — always available, not stored in league/subs.
+const NO_SHOW_ID = "no-show";
+
+function isNoShow(weekId, matchId, playerId) {
+  return getSubAssignment(weekId, matchId, playerId) === NO_SHOW_ID;
+}
+
 function getSubRounds(subId) {
   const rounds = [];
   (state.schedule || []).forEach((week) => {
@@ -1936,13 +1977,19 @@ function calculateSubHandicap(subId, beforeWeekId = null) {
 
 function getEffectiveHandicap(weekId, matchId, playerId) {
   const subId = getSubAssignment(weekId, matchId, playerId);
+  if (subId === NO_SHOW_ID) return null;
   if (subId) return calculateSubHandicap(subId, weekId);
   return calculateHandicap(playerId, weekId);
 }
 
-// Returns team's players sorted ascending by effective handicap (lowest hcp = "player A")
+// Returns team's players sorted ascending by effective handicap (lowest hcp = "player A").
+// A No-Show always sorts last ("player B") regardless of handicap, unless both players
+// are No-Shows, in which case the tie is moot.
 function getSortedPlayers(weekId, matchId, team) {
   return [...team.players].sort((a, b) => {
+    const noShowA = isNoShow(weekId, matchId, a.id);
+    const noShowB = isNoShow(weekId, matchId, b.id);
+    if (noShowA !== noShowB) return noShowA ? 1 : -1;
     const hA = getEffectiveHandicap(weekId, matchId, a.id) ?? 0;
     const hB = getEffectiveHandicap(weekId, matchId, b.id) ?? 0;
     return hA - hB;
@@ -2055,6 +2102,8 @@ function collectPlayerStats(playerId) {
           getEffectiveHandicap(week.id, match.id, pA.id),
           getEffectiveHandicap(week.id, match.id, pB.id),
           holeHandicaps,
+          isNoShow(week.id, match.id, pA.id),
+          isNoShow(week.id, match.id, pB.id),
         );
         const pts = pA.id === playerId ? pointsA : pointsB;
         points += pts.filter((p) => p !== null).reduce((s, p) => s + p, 0);
@@ -2093,6 +2142,8 @@ function collectSubStats(subId) {
           getEffectiveHandicap(week.id, match.id, pA.id),
           getEffectiveHandicap(week.id, match.id, pB.id),
           holeHandicaps,
+          isNoShow(week.id, match.id, pA.id),
+          isNoShow(week.id, match.id, pB.id),
         );
         const pts = pA.id === regularPlayerId ? pointsA : pointsB;
         points += pts.filter((p) => p !== null).reduce((s, p) => s + p, 0);
