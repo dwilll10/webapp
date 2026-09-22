@@ -64,6 +64,7 @@ let stateUnsubscribe = null;
 let adminSelectedWeekId = null;
 let adminSelectedTeamId = null;
 let statsSort = { col: null, dir: 1 }; // dir: 1 = asc, -1 = desc
+let standingsSort = { col: null, dir: -1 }; // col: null = auto (date-based active half); dir: 1 = asc, -1 = desc
 
 const yearSelect = document.querySelector("#yearSelect");
 const heroEyebrow = document.querySelector("#heroEyebrow");
@@ -102,6 +103,7 @@ document.addEventListener("DOMContentLoaded", () => {
   bindAuthActions();
   bindStatsSort();
   bindStatsStickyColumn();
+  bindStandingsSort();
   subscribeToAuthState();
   subscribeToSubs();
   loadAvailableYears();
@@ -226,6 +228,17 @@ function bindStatsSort() {
     statsSort.dir = statsSort.col === col ? statsSort.dir * -1 : 1;
     statsSort.col = col;
     renderStats();
+  });
+}
+
+function bindStandingsSort() {
+  document.querySelector("#standingsTable thead").addEventListener("click", (event) => {
+    const th = event.target.closest("th[data-col]");
+    if (!th) return;
+    const col = th.dataset.col;
+    standingsSort.dir = standingsSort.col === col ? standingsSort.dir * -1 : -1;
+    standingsSort.col = col;
+    renderStandings();
   });
 }
 
@@ -794,9 +807,12 @@ function renderStandings() {
   const structure = getSeasonStructure();
   const activeHalf = getActiveHalf();
   // Map UI column key -> data field; "championship" sorts by Total
-  const sortKey = activeHalf === "first" ? "firstHalf"
+  const autoSortKey = activeHalf === "first" ? "firstHalf"
                 : activeHalf === "second" ? "secondHalf"
                 : "total";
+  // A user click on a header overrides the date-based auto column until they click another header.
+  const sortKey = standingsSort.col || autoSortKey;
+  const sortDir = standingsSort.col ? standingsSort.dir : -1;
 
   const rows = state.teams.map((team) => {
     const firstHalf = structure
@@ -806,16 +822,16 @@ function renderStandings() {
       ? computeTeamPoints(team.id, { startIdx: structure.secondHalf.start, endIdx: structure.secondHalf.end })
       : 0;
     return { team, firstHalf, secondHalf, total: firstHalf + secondHalf };
-  }).sort((a, b) => b[sortKey] - a[sortKey] || a.team.name.localeCompare(b.team.name));
+  }).sort((a, b) => (a[sortKey] - b[sortKey]) * sortDir || a.team.name.localeCompare(b.team.name));
 
   standingsMeta.textContent = `${rows.length} teams`;
 
-  // Mark the active sort column on the header (always desc -> ▼ indicator)
+  // Mark the active sort column on the header
   if (standingsTable) {
     standingsTable.querySelectorAll("thead th[data-col]").forEach((th) => {
       const isActive = th.dataset.col === sortKey;
       th.classList.toggle("sort-active", isActive);
-      if (isActive) th.dataset.dir = "desc";
+      if (isActive) th.dataset.dir = sortDir === 1 ? "asc" : "desc";
       else delete th.dataset.dir;
     });
   }
@@ -849,9 +865,11 @@ function renderStandings() {
       championBanner.hidden = false;
       championBanner.textContent = `Championship tied: ${a} vs ${b}`;
     } else {
-      const name = getTeam(champ)?.name || "?";
+      const team = getTeam(champ);
+      const name = team?.name || "?";
+      const players = (team?.players || []).map((p) => p.name).join(" and ");
       championBanner.hidden = false;
-      championBanner.textContent = `Season Champion: ${name}`;
+      championBanner.textContent = `Season Champion: ${name}${players ? ` — ${players}` : ""}`;
     }
   }
 }

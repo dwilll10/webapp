@@ -92,16 +92,16 @@ Global substitute roster is stored separately at `league/subs` as `{ subPlayers:
 
 The 19-week season is split into two 9-week halves followed by a championship match. `getSeasonStructure()` returns `{ firstHalf, secondHalf, championshipIdx }`; championship = last week (`len-1`), and the half boundary is **`state.firstHalfWeeks`** (number of week *slots* in the first half), falling back to the even-split `floor((len-1)/2)` when absent. Returns `null` when the schedule is too short to be meaningful. The boundary is stored (not always derived) because rain-outs can make the halves unequal — it is maintained only by `applyRainOut` and reset to the even split on full schedule regeneration / season init. All standings code (`getActiveHalf`, `renderStandings`, `getHalfWinner`, `computeTeamPoints`, `getChampionshipMatch`, `getEffectiveMatches`) reads through `getSeasonStructure()` and explicit `{startIdx,endIdx}` ranges, so the stored boundary flows everywhere automatically.
 
-- **`renderStandings()`** computes three numbers per team: `firstHalf`, `secondHalf`, `total = firstHalf + secondHalf` (week 19 is **excluded** from total). The active sort column is determined by `getActiveHalf()`:
+- **`renderStandings()`** computes three numbers per team: `firstHalf`, `secondHalf`, `total = firstHalf + secondHalf` (week 19 is **excluded** from total). The default (no user click yet) sort column is determined by `getActiveHalf()`:
   - today < second-half start date → sort by **1st Half**
   - today ≥ second-half start, < championship date → sort by **2nd Half**
   - today ≥ championship date → sort by **Total**
-- The active column gets `class="sort-active" data-dir="desc"` on the `<th>` and the matching `<td>` in each row, sharing the existing CSS used by the Stats page.
+- **Click-to-sort:** the `1st Half` / `2nd Half` / `Total` `<th data-col>` headers are clickable (`bindStandingsSort()`, same delegated-click pattern as the Stats page's `bindStatsSort()`). Module-level `standingsSort = { col, dir }` holds the user's override; `col: null` means "no override — use the date-based auto column above." Clicking a header sorts by it descending; clicking the same header again toggles to ascending; clicking a different header resets to descending. The active column gets `class="sort-active"` + `data-dir="asc"|"desc"` on the `<th>` and the matching `<td>` in each row, sharing the existing CSS used by the Stats page.
 - **Half winner** (`getHalfWinner('first'|'second')`) tiebreakers in order: (1) total points within the half, (2) **head-to-head** points among the tied teams within that half, (3) team-net total within the half (`computeTeamNetTotal`), (4) team name asc as a stable last resort.
 - **Championship match** (`getChampionshipMatch()`) is computed on the fly and **never persisted**. Returns `{ id: 'championship-match', teamAId: firstHalfWinner, teamBId: secondHalfWinner }`. If the same team won both halves, the opponent is the regular-season points leader (weeks 1 .. championshipIdx-1) excluding the double-winner.
 - **`getEffectiveMatches(week)`** is the render-side bridge: returns `week.matches` for normal weeks, and `[getChampionshipMatch()]` (or `[]`) for the championship week. Used by `renderScores`, `renderSchedule`, `renderNextMatchups`, `getNextMatchupWeek`, and `renderWeekOptions` so the championship pairing flows through every UI surface without needing schedule writes.
 - **Stable match id `'championship-match'`** keeps `state.scores['week-19']['championship-match'][playerId].holes` consistent across half-winner changes. If admins later re-edit a week-9 score and the half winner changes, scores already entered for the prior teams remain in storage but stop displaying (no auto-cleanup).
-- **`getChampion()`** uses `computeMatchPointsForTeam` on the championship match to return the winner's team id, `null` when no scores entered, or `{ tie: true, ... }` if the match is fully scored but tied. `renderStandings()` uses this to render `#championBanner`.
+- **`getChampion()`** uses `computeMatchPointsForTeam` on the championship match to return the winner's team id, `null` when no scores entered, or `{ tie: true, ... }` if the match is fully scored but tied. `renderStandings()` uses this to render `#championBanner`, showing `"Season Champion: {team name} — {player A} and {player B}"` (team name + roster, same join pattern as the standings `team-cell`) on a decisive win, or `"Championship tied: {A} vs {B}"` on a tie. Styled with a bright gold gradient (`styles.css` `.champion-banner`) so it stands out from the app's green/earth palette.
 
 ## Rain-Outs
 
@@ -223,7 +223,7 @@ The app is shipped as a **PWA**. Users add it to their iPhone home screen from S
 ### ⚠️ Cache version — bump on every deploy
 Every time `app.js` or `styles.css` changes, increment the cache version in `sw.js`:
 ```js
-const CACHE = 'bogeys-v19'; // bump to v20, v21, etc. on each deploy
+const CACHE = 'bogeys-v24'; // bump to v25, v26, etc. on each deploy
 ```
 Without this, users (including the home screen app) will be served stale files from the old cache.
 
@@ -512,7 +512,7 @@ After any change to `app.js`, `styles.css`, or `index.html`:
 
 ```bash
 # 1. Edit root files as usual
-# 2. Bump sw.js CACHE version (currently bogeys-v19 → v20, v21, etc.)
+# 2. Bump sw.js CACHE version (currently bogeys-v24 → v25, v26, etc.)
 ~/.npm-global/bin/firebase deploy --only hosting   # update live web/PWA
 npm run sync                                         # sync to native projects
 # iOS: Cmd+R in Xcode to rebuild simulator / Archive for App Store

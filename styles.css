@@ -843,13 +843,13 @@ td.sort-active {
   margin: 0 0 18px;
   padding: 14px 22px;
   border-radius: 999px;
-  background: var(--green);
-  color: #fff;
+  background: linear-gradient(135deg, #ffd93d, #ffb300);
+  color: #4a2f00;
   font-family: "Fraunces", serif;
   font-weight: 700;
   font-size: 1.15rem;
   letter-spacing: 0.01em;
-  box-shadow: 0 6px 18px rgba(74, 122, 82, 0.3);
+  box-shadow: 0 6px 20px rgba(255, 179, 0, 0.45);
 }
 
 @media (max-width: 980px) {
